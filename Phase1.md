@@ -175,7 +175,155 @@ decision rather than stating it outright, that is captured as an
 
 ## 4. Data Structures
 
-*(Next installment.)*
+Phase 1 persists data as a single server-side JSON file (`db.json`) acting as
+a set of collections, structured so the shape maps directly onto future
+MongoDB collections in Phase 2 (satisfies R36 — swapping the storage layer
+later shouldn't require reshaping the data). All entities use a server-generated
+UUID `id` string as their primary key.
+
+### 4.1 `User`
+
+```ts
+interface User {
+  id: string;
+  email: string;              // unique, immutable (R21)
+  passwordHash: string;       // bcrypt hash, never plain text (R22)
+  firstName: string;
+  lastName: string;
+  displayName: string;        // editable; defaults to "First Last" (R21)
+  age: number;                // self-reported (R25)
+  isSuperAdmin: boolean;      // true for exactly one user (R1)
+  groupAdminOf: string[];     // Group IDs this user administers (R6)
+  groupMemberships: string[]; // Group IDs this user has joined
+  avatarUrl: string | null;
+  preferences: {
+    theme: 'light' | 'dark';
+    fontSize: 'small' | 'medium' | 'large';
+  };
+  createdAt: string;          // ISO 8601
+}
+```
+
+Note: Group Admin is **not** a separate role enum — it's derived from
+`groupAdminOf.length > 0` for a given group, per R6 (a Group Admin is just a
+regular user with a scoped extra permission).
+
+### 4.2 `Group`
+
+```ts
+interface Group {
+  id: string;
+  title: string;              // max 30 chars (R13)
+  description: string;        // max 250 chars (R13)
+  minAge: number;
+  backgroundColor: string | null; // hex, optional theme (R13/R34)
+  adminIds: string[];         // ≥1 at all times (R9)
+  memberIds: string[];
+  createdAt: string;
+}
+```
+
+### 4.3 `Room`
+
+```ts
+interface Room {
+  id: string;
+  groupId: string;            // parent Group (R17)
+  name: string;
+  minAge: number;             // can exceed the parent Group's minAge (R17)
+  createdAt: string;
+}
+```
+
+### 4.4 `Message` (modelled now, implemented in Phase 2)
+
+```ts
+interface Message {
+  id: string;
+  roomId: string;
+  senderId: string;
+  senderDisplayName: string;  // denormalized for fast render (R uses profile pic + name per message)
+  senderAvatarUrl: string | null;
+  type: 'text' | 'image';
+  content: string;            // text body, or image URL/path
+  sentAt: string;
+}
+```
+
+Only the **5 most recent** `Message` records per `roomId` are retained
+server-side (R27) — enforced in the data-access layer (trim-on-insert), not
+left to the client.
+
+### 4.5 `Request` (unified admin/approval queue)
+
+The transcript describes several distinct "message queues" (group creation,
+group join, room creation, group ban, account deletion escalation). These are
+modelled as one collection with a `type` discriminator rather than five
+separate tables, since they all share the same request → approve/deny →
+resolve lifecycle:
+
+```ts
+type RequestType =
+  | 'group_creation'   // user -> Super Admin (R3)
+  | 'group_join'       // user -> Group Admin (R7, R11)
+  | 'room_creation'    // user -> Group Admin (R12)
+  | 'group_ban'        // user -> Group Admin, needs reason (R8)
+  | 'account_deletion'; // Group Admin -> Super Admin, needs reason (R4)
+
+interface Request {
+  id: string;
+  type: RequestType;
+  requesterId: string;
+  targetGroupId: string | null;  // relevant Group, if any
+  targetUserId: string | null;   // relevant User being banned/deleted, if any
+  payload: Record<string, unknown> | null; // e.g. { title, description, minAge } for group_creation
+  reason: string | null;         // required for group_ban / account_deletion
+  status: 'pending' | 'approved' | 'denied';
+  resolvedBy: string | null;     // admin User id
+  createdAt: string;
+  resolvedAt: string | null;
+}
+```
+
+### 4.6 `AdminLogEntry`
+
+```ts
+type AdminAction =
+  | 'user_created' | 'user_deleted'
+  | 'group_created' | 'group_updated'
+  | 'group_member_added' | 'group_member_removed' | 'group_member_banned'
+  | 'room_created' | 'room_removed';
+
+interface AdminLogEntry {
+  id: string;
+  action: AdminAction;
+  actorId: string;            // who performed it
+  targetId: string | null;    // affected User/Group/Room id
+  details: string;            // human-readable summary for the log table
+  timestamp: string;
+}
+```
+
+Every administrative action is logged (R31); regular chat messages are
+explicitly excluded from this log.
+
+### 4.7 `db.json` top-level shape
+
+```json
+{
+  "users": [],
+  "groups": [],
+  "rooms": [],
+  "requests": [],
+  "adminLogs": [],
+  "messages": []
+}
+```
+
+A small data-access module (`DbService` on the backend) wraps read/write
+access to this file so route handlers never touch the filesystem directly —
+this is the abstraction point that gets swapped for Mongoose models in Phase 2
+without touching controller logic.
 
 ## 5. Angular Architecture
 
