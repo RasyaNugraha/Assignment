@@ -327,13 +327,252 @@ without touching controller logic.
 
 ## 5. Angular Architecture
 
-*(Next installment.)*
+Angular 20+ with standalone components (no `NgModule` boilerplate), the
+functional router, and `inject()`-based DI throughout. State is kept simple —
+component/service `signal`s, no NgRx — appropriate for an app this size.
+
+### 5.1 Component tree
+
+```
+AppComponent
+├── NavbarComponent            (shown once logged in; hidden on /bootstrap, /login, /register)
+├── BootstrapComponent         /bootstrap
+├── LoginComponent             /login
+├── RegisterComponent          /register
+├── GroupListComponent         /groups
+│   ├── GroupCardComponent     (repeated: "My Groups" + "All Groups" lists)
+│   └── RequestGroupFormComponent  (modal/inline form -> POST group request)
+├── GroupViewComponent         /groups/:groupId
+│   ├── RoomListItemComponent  (repeated per Room, age-gated "Enter" button)
+│   ├── RequestRoomFormComponent
+│   └── GroupAdminPanelComponent   (*ngIf isGroupAdmin: join requests, members, edit desc/age)
+├── RoomComponent              /groups/:groupId/rooms/:roomId  (placeholder view, Phase 1)
+├── ProfileComponent           /profile
+│   ├── AvatarUploadComponent
+│   └── ChangePasswordFormComponent
+├── SuperAdminQueueComponent   /admin/queue        (Super Admin only)
+│   ├── GroupRequestsTabComponent
+│   └── AccountDeletionRequestsTabComponent
+└── AdminLogComponent          /admin/logs         (Super Admin only)
+```
+
+Shared/dumb components used across the tree: `ConfirmDialogComponent`,
+`ToastComponent` (approve/deny/error feedback), `LoadingSpinnerComponent`.
+
+### 5.2 Services
+
+| Service | Responsibility |
+|---|---|
+| `AuthService` | Login, register, logout, bootstrap-check, holds current-user `signal`, exposes `isSuperAdmin()` / `isGroupAdminOf(groupId)` helpers. |
+| `UserService` | Fetch/update own profile, upload avatar, (Super Admin) list/delete users. |
+| `GroupService` | List groups, request creation, join a group (request), leave a group, (Group Admin) update description/age, appoint co-admin. |
+| `RoomService` | List rooms for a group, request room creation, (Group Admin) remove room. |
+| `RequestQueueService` | Fetch pending `Request` items by type/scope, approve/deny — backs both the Super Admin queue screens and the Group Admin's join/ban request views. |
+| `AdminLogService` | Fetch admin log entries, filter by action type. |
+| `AuthInterceptor` (HTTP interceptor, not a service) | Attaches session credentials to outgoing requests; redirects to `/login` on 401. |
+
+### 5.3 Models
+
+The `interfaces/` folder mirrors the backend entities defined in
+[Section 4](#4-data-structures) directly (`User`, `Group`, `Room`, `Request`,
+`RequestType`, `AdminLogEntry`, `AdminAction`) — one shared contract, no
+duplicate frontend-only shapes, to avoid drift between what the API returns
+and what components expect.
+
+### 5.4 Routing & guards
+
+| Path | Component | Guard |
+|---|---|---|
+| `/bootstrap` | `BootstrapComponent` | `noUsersGuard` — redirects to `/login` if a Super Admin already exists |
+| `/login` | `LoginComponent` | `bootstrapRequiredGuard` — redirects to `/bootstrap` if zero users exist |
+| `/register` | `RegisterComponent` | same as above |
+| `/groups` | `GroupListComponent` | `authGuard` |
+| `/groups/:groupId` | `GroupViewComponent` | `authGuard` |
+| `/groups/:groupId/rooms/:roomId` | `RoomComponent` | `authGuard` + `roomAgeGuard` (blocks entry, shows reason, per R18) |
+| `/profile` | `ProfileComponent` | `authGuard` |
+| `/admin/queue` | `SuperAdminQueueComponent` | `authGuard` + `superAdminGuard` |
+| `/admin/logs` | `AdminLogComponent` | `authGuard` + `superAdminGuard` |
+| `/**` | redirect | → `/groups` if logged in, else `/login` |
+
+All guards are functional (`CanActivateFn`), injecting `AuthService` to check
+session/role state before the route resolves.
 
 ## 6. Proposed Server Endpoints
 
-*(Next installment.)*
+REST API under `/api`, JSON request/response bodies. **Phase** column marks
+what's implemented in the Phase 1 prototype vs. deferred to Phase 2 — per the
+brief, Phase 2-only endpoints don't need implementing yet, just defining.
+Auth uses a simple server-side session (cookie), not JWT (per R20).
+
+### 6.1 Bootstrap & Auth
+
+| Method | Endpoint | Description | Phase |
+|---|---|---|---|
+| GET | `/api/bootstrap/status` | Whether the system has zero users (drives `/bootstrap` vs `/login` redirect). | 1 |
+| POST | `/api/bootstrap` | Create the first user as Super Admin. Rejected if a user already exists. | 1 |
+| POST | `/api/auth/register` | Register a new General User. | 1 |
+| POST | `/api/auth/login` | Authenticate, start session. | 1 |
+| POST | `/api/auth/logout` | End session. | 1 |
+| GET | `/api/auth/me` | Current logged-in user + role info. | 1 |
+
+### 6.2 Users
+
+| Method | Endpoint | Description | Phase |
+|---|---|---|---|
+| GET | `/api/users` | List all users (Super Admin — e.g. to pick a target for deletion). | 1 |
+| PUT | `/api/users/me` | Update own display name / avatar. | 1 |
+| PUT | `/api/users/me/password` | Change own password (old + new + confirm). | 1 |
+| PUT | `/api/users/me/preferences` | Update theme/font-size preferences. | 1 |
+| DELETE | `/api/users/:id` | Super Admin permanently deletes a user (only reachable after an approved `account_deletion` request). | 1 |
+
+### 6.3 Groups
+
+| Method | Endpoint | Description | Phase |
+|---|---|---|---|
+| GET | `/api/groups` | List all groups (visible to everyone, R14). | 1 |
+| GET | `/api/groups/:id` | Group details + room list. | 1 |
+| PUT | `/api/groups/:id` | Group Admin edits description / min age (not title, R30). | 1 |
+| POST | `/api/groups/:id/admins` | Group Admin appoints a co-admin (needed before they can step down, R9). | 1 |
+| DELETE | `/api/groups/:id/members/:userId` | Leave a group (self) or Group Admin removes a member post-ban-approval. | 1 |
+| POST | `/api/requests/group-creation` | User requests a new Group be created. | 1 |
+| POST | `/api/requests/group-join` | User requests to join a Group. | 1 |
+| POST | `/api/requests/group-ban` | User requests another member be banned from a Group (with reason). | 1 |
+| POST | `/api/requests/account-deletion` | Group Admin escalates a full account-deletion request to Super Admin (with reason). | 1 |
+| GET | `/api/requests?type=&status=` | List requests, filterable — backs both the Super Admin queue and Group Admin's pending-requests view. | 1 |
+| PUT | `/api/requests/:id/approve` | Approve a pending request (creates the Group/membership/ban/deletion as a side effect). | 1 |
+| PUT | `/api/requests/:id/deny` | Deny a pending request. | 1 |
+
+### 6.4 Rooms
+
+| Method | Endpoint | Description | Phase |
+|---|---|---|---|
+| GET | `/api/groups/:groupId/rooms` | List rooms in a group. | 1 |
+| POST | `/api/requests/room-creation` | User requests a new Room in a Group. | 1 |
+| DELETE | `/api/rooms/:id` | Group Admin removes a room. | 1 |
+
+### 6.5 Messaging (Phase 2)
+
+| Method | Endpoint | Description | Phase |
+|---|---|---|---|
+| GET | `/api/rooms/:id/messages` | Last 5 persisted messages for a room (initial load on join, R27). | 2 |
+| POST | `/api/rooms/:id/messages/image` | Upload an image attachment (PNG/GIF/JPEG, ≤2MB, R26). | 2 |
+| *socket* `join_room` | Join a room's socket channel; broadcasts `user_joined` to others (R30). | 2 |
+| *socket* `leave_room` | Leave a room's socket channel; broadcasts `user_left`. | 2 |
+| *socket* `send_message` | Broadcast a new text/image message to the room. | 2 |
+| *socket* `delete_message` | Broadcast a message-id removal so all connected clients drop it locally (R28). | 2 |
+
+### 6.6 Admin Logging
+
+| Method | Endpoint | Description | Phase |
+|---|---|---|---|
+| GET | `/api/admin/logs?action=&from=&to=` | Filtered administrative action log (R31, R32). | 1 |
+
+All mutating routes (`POST`/`PUT`/`DELETE`) that represent an administrative
+action write an `AdminLogEntry` server-side as part of the same request —
+logging is not a separate client-triggered call.
 
 ## 7. Design Documents
 
-*(Next installment — will formalize [docs/WIREFRAME.md](docs/WIREFRAME.md)
-into storyboards with a responsive design pass.)*
+These storyboards formalize the screen list already scoped in
+[docs/WIREFRAME.md](docs/WIREFRAME.md), each shown at the **desktop**
+(primary target) and **tablet ~768px** (bonus responsive target, R33)
+breakpoints. Two-column desktop layouts collapse to a single stacked column
+on tablet — the standard responsive pattern used throughout.
+
+### 7.1 Group List — desktop vs tablet
+
+```
+Desktop (≥1024px)                          Tablet (~768px)
+┌─────────────────────────────────┐        ┌───────────────────┐
+│ Logo   Fabulari      [Avatar ▾] │        │ Logo  Fabulari [≡] │
+├───────────┬───────────────────--┤        ├───────────────────┤
+│ My Groups │ All Groups          │        │ [My Groups|All ▾] │
+│ • Group A │ ┌─────────────────┐ │        │ ┌───────────────┐ │
+│ • Group B │ │ Group C   [Join]│ │        │ │ Group A       │ │
+│           │ ├─────────────────┤ │        │ ├───────────────┤ │
+│ [+Request │ │ Group D   [Join]│ │        │ │ Group B       │ │
+│  Group]   │ └─────────────────┘ │        │ └───────────────┘ │
+└───────────┴─────────────────────┘        │ [+ Request Group] │
+                                            └───────────────────┘
+```
+Sidebar ("My Groups") becomes a top tab-switcher on tablet instead of a
+persistent side column, to preserve width for the list itself.
+
+### 7.2 Group View — desktop vs tablet
+
+```
+Desktop                                     Tablet
+┌─────────────────────────────────┐        ┌───────────────────┐
+│ ← Group A   "General discussion" │        │ ← Group A         │
+│ Age limit: 13+                   │        │ Age 13+           │
+├───────────────┬───────────────---┤        ├───────────────────┤
+│ Rooms         │ Admin panel       │        │ Rooms             │
+│ • #general [Enter]                │        │ • #general [Enter]│
+│ • #random  [Enter]  (if admin)   │        │ • #random  [Enter]│
+│ [+Request Room]│ Pending: 2 [Mngr]│        │ [+ Request Room]  │
+└───────────────┴───────────────---┘        │ [Admin panel ▾]   │
+                                            └───────────────────┘
+```
+The admin-only panel (join-request approvals, member/ban management) sits as
+a second desktop column but collapses into an expandable section on tablet
+rather than disappearing, since a Group Admin still needs it on a tablet.
+
+### 7.3 Room (Phase 1 placeholder) & Profile
+
+```
+Room (both breakpoints — single column always, chat is inherently a stream)
+┌─────────────────────────────────┐
+│ ← #general   👥 3 in room        │
+├───────────────────────────────---┤
+│ [avatar] Name  12:04   message   │
+│ [avatar] Name  12:05   message   │
+│  ...(placeholder/mock content    │
+│   for Phase 1 — real-time chat   │
+│   is Phase 2)                    │
+├───────────────────────────────---┤
+│ [ type a message...        ][>] │  <- disabled/mock in Phase 1
+└─────────────────────────────────┘
+
+Profile (desktop 2-col -> tablet stacked)
+Desktop: [Avatar upload] | [Name, email(ro), password form, prefs]
+Tablet:  [Avatar upload]
+         [Name, email(ro), password form, prefs]  (stacked below)
+```
+
+### 7.4 Auth screens (Bootstrap / Login / Register)
+
+Single centered card, identical structure at both breakpoints (card width
+caps at ~400px so it never needs a distinct tablet layout):
+
+```
+┌───────────────────────┐
+│        Fabulari logo  │
+│  [ email            ] │
+│  [ password         ] │
+│      [ Log in ]       │
+│   No account? Register│
+└───────────────────────┘
+```
+
+### 7.5 Super Admin Queue & Admin Log
+
+Both are table-driven screens; on tablet, table rows collapse into stacked
+key/value cards (a common responsive-table pattern) rather than horizontal
+scrolling, so the primary action (Approve/Deny) stays reachable with one tap.
+
+### 7.6 Navigation flow
+
+See [docs/WIREFRAME.md §"Navigation Flow"](docs/WIREFRAME.md) for the full
+screen-to-screen flow diagram — reproduced here as authoritative for Phase 1
+scope (Bootstrap → Login/Register → Group List → Group View → Room
+placeholder, with Profile and, for Super Admin, the Queue/Log screens
+reachable from the nav bar at any time).
+
+### 7.7 Note on fidelity
+
+These are structural/low-fidelity wireframes sufficient to drive Phase 1
+component layout decisions. Higher-fidelity mockups (exact spacing, the
+provided logo, and brand colors applied) will be produced as the Angular
+components are actually built in Weeks 3–4, rather than up front in a
+separate design tool — consistent with the client's guidance that layout is
+the student's choice with no mandated design tool.
