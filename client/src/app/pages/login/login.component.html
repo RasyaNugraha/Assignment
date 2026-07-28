@@ -1,0 +1,48 @@
+<div class="screen">
+  <form class="card" (ngSubmit)="onSubmit()">
+    <div class="bubbles">
+      <span class="bubble bubble--blue"></span>
+      <span class="bubble bubble--yellow"></span>
+      <span class="bubble bubble--coral"></span>
+    </div>
+
+    <h1 class="wordmark">Fabulari</h1>
+    <p class="tagline">where communities meet</p>
+
+    <h2 class="title">Log in to your account</h2>
+
+    @if (errorMessage()) {
+      <p class="error">{{ errorMessage() }}</p>
+    }
+
+    <label class="field">
+      <span class="field__label">Email</span>
+      <input
+        class="field__input"
+        type="email"
+        name="email"
+        [(ngModel)]="email"
+        placeholder="you@example.com"
+        required
+      />
+    </label>
+
+    <label class="field">
+      <span class="field__label">Password</span>
+      <input
+        class="field__input"
+        type="password"
+        name="password"
+        [(ngModel)]="password"
+        placeholder="••••••••"
+        required
+      />
+    </label>
+
+    <button class="btn btn--blue" type="submit" [disabled]="loading()">
+      {{ loading() ? 'Logging in…' : 'Log In' }}
+    </button>
+
+    <a class="link" routerLink="/register">Don't have an account? Register</a>
+  </form>
+</div>

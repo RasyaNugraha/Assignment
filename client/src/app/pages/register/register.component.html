@@ -1,0 +1,66 @@
+<div class="screen">
+  <form class="card" (ngSubmit)="onSubmit()">
+    <div class="bubbles">
+      <span class="bubble bubble--blue"></span>
+      <span class="bubble bubble--yellow"></span>
+      <span class="bubble bubble--coral"></span>
+    </div>
+
+    <h2 class="title">Create your account</h2>
+
+    @if (errorMessage()) {
+      <p class="error">{{ errorMessage() }}</p>
+    }
+
+    <div class="field-row">
+      <label class="field">
+        <span class="field__label">First Name</span>
+        <input class="field__input" type="text" name="firstName" [(ngModel)]="firstName" placeholder="Jane" required />
+      </label>
+      <label class="field">
+        <span class="field__label">Last Name</span>
+        <input class="field__input" type="text" name="lastName" [(ngModel)]="lastName" placeholder="Doe" required />
+      </label>
+    </div>
+
+    <label class="field">
+      <span class="field__label">Email</span>
+      <input class="field__input" type="email" name="email" [(ngModel)]="email" placeholder="you@example.com" required />
+    </label>
+
+    <label class="field">
+      <span class="field__label">Age</span>
+      <input class="field__input" type="number" name="age" [(ngModel)]="age" placeholder="21" required min="0" />
+    </label>
+
+    <label class="field">
+      <span class="field__label">Password</span>
+      <input
+        class="field__input"
+        type="password"
+        name="password"
+        [(ngModel)]="password"
+        placeholder="min. 8 chars, 1 uppercase"
+        required
+      />
+    </label>
+
+    <label class="field">
+      <span class="field__label">Confirm Password</span>
+      <input
+        class="field__input"
+        type="password"
+        name="confirmPassword"
+        [(ngModel)]="confirmPassword"
+        placeholder="••••••••"
+        required
+      />
+    </label>
+
+    <button class="btn btn--coral" type="submit" [disabled]="loading()">
+      {{ loading() ? 'Creating account…' : 'Create Account' }}
+    </button>
+
+    <a class="link" routerLink="/login">Already have an account? Log in</a>
+  </form>
+</div>

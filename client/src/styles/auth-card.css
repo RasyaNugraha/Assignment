@@ -1,0 +1,148 @@
+/* Shared card styling for auth screens (Login/Register/Bootstrap) — mirrors
+   the Figma design at https://www.figma.com/design/InZhMRyZPPzqnZytgymq1M */
+
+.screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.bubbles {
+  display: flex;
+  gap: 10px;
+}
+
+.bubble {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+.bubble--blue {
+  background: var(--color-blue);
+}
+.bubble--yellow {
+  background: var(--color-yellow);
+}
+.bubble--coral {
+  background: var(--color-coral);
+}
+
+.wordmark {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--color-navy);
+}
+
+.tagline {
+  margin: -12px 0 0;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.title {
+  margin: 8px 0 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-navy);
+  text-align: center;
+}
+
+.hint {
+  margin: -8px 0 0;
+  font-size: 12px;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.error {
+  width: 100%;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: #fdecea;
+  color: var(--color-coral);
+  font-size: 13px;
+  text-align: center;
+}
+
+.field {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-navy);
+}
+
+.field__input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--color-navy);
+  background: var(--color-white);
+}
+
+.field__input:focus {
+  outline: none;
+  border-color: var(--color-blue);
+}
+
+.field-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+.field-row .field {
+  flex: 1;
+}
+
+.btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-white);
+  margin-top: 8px;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.btn--blue {
+  background: var(--color-blue);
+}
+.btn--coral {
+  background: var(--color-coral);
+}
+
+.link {
+  font-size: 13px;
+  color: var(--color-blue);
+  text-decoration: none;
+}
+.link:hover {
+  text-decoration: underline;
+}
