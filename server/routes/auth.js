@@ -1,0 +1,158 @@
+// Bootstrap & Auth routes — Phase1.md section 6.1
+// R1/R2: exactly one Super Admin, created once via bootstrap, only while the
+// system has zero users.
+// R20-R25: simple email/password auth, bcrypt-hashed, session-based (no JWT).
+
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const { randomUUID } = require('crypto');
+const db = require('../services/dbService');
+
+const router = express.Router();
+
+const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // min 8 chars, at least 1 uppercase (R23)
+
+function toPublicUser(user) {
+  if (!user) return null;
+  const { passwordHash, ...publicUser } = user;
+  return publicUser;
+}
+
+function validateRegistrationFields({ email, password, firstName, lastName, age }) {
+  const errors = [];
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) errors.push('A valid email is required.');
+  if (!firstName || !firstName.trim()) errors.push('First name is required.');
+  if (!lastName || !lastName.trim()) errors.push('Last name is required.');
+  if (age === undefined || age === null || Number.isNaN(Number(age)) || Number(age) < 0) {
+    errors.push('A valid age is required.');
+  }
+  if (!password || !PASSWORD_RULE.test(password)) {
+    errors.push('Password must be at least 8 characters and include an uppercase letter.');
+  }
+  return errors;
+}
+
+// GET /api/bootstrap/status — whether the system has zero users (R2)
+router.get('/bootstrap/status', (req, res) => {
+  const userCount = db.getAll('users').length;
+  res.json({ needsBootstrap: userCount === 0 });
+});
+
+// POST /api/bootstrap — create the first user as Super Admin. Rejected once
+// any user exists (R1, R2).
+router.post('/bootstrap', async (req, res) => {
+  const existingUsers = db.getAll('users');
+  if (existingUsers.length > 0) {
+    return res.status(409).json({ error: 'Bootstrap has already been completed.' });
+  }
+
+  const { email, password, firstName, lastName, age } = req.body || {};
+  const errors = validateRegistrationFields({ email, password, firstName, lastName, age });
+  if (errors.length) return res.status(400).json({ errors });
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = {
+    id: randomUUID(),
+    email: email.toLowerCase(),
+    passwordHash,
+    firstName,
+    lastName,
+    displayName: `${firstName} ${lastName}`,
+    age: Number(age),
+    isSuperAdmin: true,
+    groupAdminOf: [],
+    groupMemberships: [],
+    avatarUrl: null,
+    preferences: { theme: 'light', fontSize: 'medium' },
+    createdAt: new Date().toISOString(),
+  };
+  db.insert('users', user);
+  db.logAdminAction({
+    action: 'user_created',
+    actorId: user.id,
+    targetId: user.id,
+    details: `${user.displayName} bootstrapped as the initial Super Admin.`,
+  });
+
+  req.session.userId = user.id;
+  res.status(201).json(toPublicUser(user));
+});
+
+// POST /api/auth/register — register a new General User (R25). Blocked until
+// bootstrap has happened, since /register should never run before /bootstrap.
+router.post('/auth/register', async (req, res) => {
+  if (db.getAll('users').length === 0) {
+    return res.status(409).json({ error: 'System has not been bootstrapped yet.' });
+  }
+
+  const { email, password, firstName, lastName, age } = req.body || {};
+  const errors = validateRegistrationFields({ email, password, firstName, lastName, age });
+  if (errors.length) return res.status(400).json({ errors });
+
+  const normalizedEmail = email.toLowerCase();
+  if (db.findOne('users', (u) => u.email === normalizedEmail)) {
+    return res.status(409).json({ error: 'An account with this email already exists.' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = {
+    id: randomUUID(),
+    email: normalizedEmail,
+    passwordHash,
+    firstName,
+    lastName,
+    displayName: `${firstName} ${lastName}`,
+    age: Number(age),
+    isSuperAdmin: false,
+    groupAdminOf: [],
+    groupMemberships: [],
+    avatarUrl: null,
+    preferences: { theme: 'light', fontSize: 'medium' },
+    createdAt: new Date().toISOString(),
+  };
+  db.insert('users', user);
+  db.logAdminAction({
+    action: 'user_created',
+    actorId: user.id,
+    targetId: user.id,
+    details: `${user.displayName} registered an account.`,
+  });
+
+  req.session.userId = user.id;
+  res.status(201).json(toPublicUser(user));
+});
+
+// POST /api/auth/login
+router.post('/auth/login', async (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
+  }
+
+  const user = db.findOne('users', (u) => u.email === email.toLowerCase());
+  if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
+
+  const matches = await bcrypt.compare(password, user.passwordHash);
+  if (!matches) return res.status(401).json({ error: 'Invalid email or password.' });
+
+  req.session.userId = user.id;
+  res.json(toPublicUser(user));
+});
+
+// POST /api/auth/logout
+router.post('/auth/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie('connect.sid');
+    res.status(204).end();
+  });
+});
+
+// GET /api/auth/me — current logged-in user + role info
+router.get('/auth/me', (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not logged in.' });
+  const user = db.findById('users', req.session.userId);
+  if (!user) return res.status(401).json({ error: 'Not logged in.' });
+  res.json(toPublicUser(user));
+});
+
+module.exports = router;
