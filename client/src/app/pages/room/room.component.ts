@@ -1,6 +1,7 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
+import { Subscription } from 'rxjs';
 
 // WIREFRAME.md §6 "Room Screen (placeholder for Phase 1)". No chat/socket
 // functionality required yet (REQUIREMENTS.md §12) — static mock messages
@@ -23,13 +24,32 @@ const MOCK_MESSAGES: MockMessage[] = [
   templateUrl: './room.component.html',
   styleUrl: './room.component.css',
 })
-export class RoomComponent {
+export class RoomComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
-  roomId = signal(this.route.snapshot.paramMap.get('roomId') ?? '');
-  groupId = signal(this.route.snapshot.paramMap.get('groupId') ?? '');
+  // Subscribed rather than snapshot-read (Week 4 lecture) — jumping straight
+  // from one Room to another reuses this component instance, so a
+  // snapshot-only read of the route params would never update after the
+  // first load.
+  roomId = signal('');
+  groupId = signal('');
+  private paramSub?: Subscription;
+
   messages = signal(MOCK_MESSAGES);
+
+  ngOnInit() {
+    this.paramSub = this.route.paramMap.subscribe((params) => {
+      this.roomId.set(params.get('roomId') ?? '');
+      this.groupId.set(params.get('groupId') ?? '');
+      // TODO: re-fetch this room's real last-5 messages from
+      // /api/rooms/:id/messages here once that endpoint exists (Phase 2).
+    });
+  }
+
+  ngOnDestroy() {
+    this.paramSub?.unsubscribe();
+  }
 
   onLeave() {
     this.router.navigate(['/groups', this.groupId()]);
