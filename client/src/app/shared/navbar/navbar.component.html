@@ -1,0 +1,27 @@
+<nav class="navbar">
+  <a class="navbar__brand" routerLink="/groups">
+    <span class="navbar__logo-dot navbar__logo-dot--blue"></span>
+    <span class="navbar__logo-dot navbar__logo-dot--yellow"></span>
+    <span class="navbar__logo-dot navbar__logo-dot--coral"></span>
+    <span class="navbar__wordmark">Fabulari</span>
+  </a>
+
+  <div class="navbar__links">
+    <a class="navbar__link" routerLink="/groups" routerLinkActive="navbar__link--active">Groups</a>
+    @if (auth.currentUser()?.isSuperAdmin) {
+      <a class="navbar__link" routerLink="/admin/queue" routerLinkActive="navbar__link--active">Admin Queue</a>
+      <a class="navbar__link" routerLink="/admin/logs" routerLinkActive="navbar__link--active">Admin Log</a>
+    }
+  </div>
+
+  <div class="navbar__user">
+    <a class="navbar__avatar" routerLink="/profile" [title]="auth.currentUser()?.displayName ?? 'Profile'">
+      @if (auth.currentUser()?.avatarUrl) {
+        <img [src]="auth.currentUser()?.avatarUrl" alt="" />
+      } @else {
+        <span>{{ (auth.currentUser()?.displayName ?? '?').charAt(0) }}</span>
+      }
+    </a>
+    <button class="navbar__logout" type="button" (click)="onLogout()">Log out</button>
+  </div>
+</nav>
