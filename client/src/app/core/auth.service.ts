@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
@@ -31,10 +31,12 @@ export interface RegistrationFields {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
+  // inject() instead of a constructor param — per Week 4 lecture, Angular's
+  // moved away from constructor injection to this function-based form.
+  private http = inject(HttpClient);
+
   // Whoever's logged in right now, shared across every component that injects this service.
   currentUser = signal<User | null>(null);
-
-  constructor(private http: HttpClient) {}
 
   needsBootstrap(): Promise<boolean> {
     return firstValueFrom(this.http.get<{ needsBootstrap: boolean }>('/api/bootstrap/status')).then(

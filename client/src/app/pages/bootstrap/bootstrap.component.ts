@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -17,6 +17,9 @@ const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // R23
   styleUrl: './bootstrap.component.css',
 })
 export class BootstrapComponent implements OnInit {
+  private auth = inject(AuthService);
+  private router = inject(Router);
+
   firstName = '';
   lastName = '';
   email = '';
@@ -26,11 +29,6 @@ export class BootstrapComponent implements OnInit {
 
   loading = signal(false);
   errorMessage = signal<string | null>(null);
-
-  constructor(
-    private auth: AuthService,
-    private router: Router,
-  ) {}
 
   async ngOnInit() {
     // If bootstrap has already happened, this screen shouldn't be reachable.
