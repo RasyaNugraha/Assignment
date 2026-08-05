@@ -2,13 +2,18 @@ import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 
+// Mirrors what the server sends back (toPublicUser in auth.js) — no passwordHash.
+// dateOfBirth is the stored source of truth (per client clarification: ask for
+// birthday, not a raw age, since age alone goes stale); age is computed
+// server-side from it and included for convenient display/age-gating.
 export interface User {
   id: string;
   email: string;
   firstName: string;
   lastName: string;
   displayName: string;
-  age: number;
+  dateOfBirth: string; // ISO date (yyyy-MM-dd)
+  age: number; // computed from dateOfBirth
   isSuperAdmin: boolean;
   groupAdminOf: string[];
   groupMemberships: string[];
@@ -21,11 +26,12 @@ export interface RegistrationFields {
   password: string;
   firstName: string;
   lastName: string;
-  age: number;
+  dateOfBirth: string; // ISO date (yyyy-MM-dd), from an <input type="date">
 }
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
+  // Whoever's logged in right now, shared across every component that injects this service.
   currentUser = signal<User | null>(null);
 
   constructor(private http: HttpClient) {}
@@ -62,6 +68,8 @@ export class AuthService {
     this.currentUser.set(null);
   }
 
+  // Checks the current session on the server and syncs currentUser — used on
+  // app load / refresh so a logged-in user doesn't get bounced to /login.
   me(): Promise<User> {
     return firstValueFrom(this.http.get<User>('/api/auth/me')).then((user) => {
       this.currentUser.set(user);

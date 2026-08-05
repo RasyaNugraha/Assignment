@@ -20,7 +20,7 @@ export class BootstrapComponent implements OnInit {
   firstName = '';
   lastName = '';
   email = '';
-  age: number | null = null;
+  dateOfBirth = '';
   password = '';
   confirmPassword = '';
 
@@ -57,9 +57,11 @@ export class BootstrapComponent implements OnInit {
         password: this.password,
         firstName: this.firstName,
         lastName: this.lastName,
-        age: Number(this.age),
+        dateOfBirth: this.dateOfBirth,
       });
-      // TODO: navigate to /groups (or an admin landing page) once it exists.
+      // Super Admin doesn't chat (R5) but /groups is still the shared shell;
+      // the navbar shows admin-only links once those screens exist (Week 6).
+      this.router.navigateByUrl('/groups');
     } catch (err: any) {
       const apiErrors = err?.error?.errors as string[] | undefined;
       this.errorMessage.set(apiErrors?.join(' ') ?? err?.error?.error ?? 'Something went wrong. Please try again.');

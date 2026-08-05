@@ -2,6 +2,10 @@
 // R1/R2: exactly one Super Admin, created once via bootstrap, only while the
 // system has zero users.
 // R20-R25: simple email/password auth, bcrypt-hashed, session-based (no JWT).
+//
+// Age is stored as dateOfBirth (per client clarification in the Week 3
+// follow-up Q&A: ask for a birthday, not a raw age number, since a raw
+// number goes stale — always derive age from the stored date instead).
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
@@ -12,20 +16,36 @@ const router = express.Router();
 
 const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // min 8 chars, at least 1 uppercase (R23)
 
+function computeAge(dateOfBirth) {
+  const dob = new Date(dateOfBirth);
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const hasHadBirthdayThisYear =
+    today.getMonth() > dob.getMonth() ||
+    (today.getMonth() === dob.getMonth() && today.getDate() >= dob.getDate());
+  if (!hasHadBirthdayThisYear) age -= 1;
+  return age;
+}
+
 function toPublicUser(user) {
   if (!user) return null;
   const { passwordHash, ...publicUser } = user;
-  return publicUser;
+  return { ...publicUser, age: computeAge(user.dateOfBirth) };
 }
 
-function validateRegistrationFields({ email, password, firstName, lastName, age }) {
+function validateRegistrationFields({ email, password, firstName, lastName, dateOfBirth }) {
   const errors = [];
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) errors.push('A valid email is required.');
   if (!firstName || !firstName.trim()) errors.push('First name is required.');
   if (!lastName || !lastName.trim()) errors.push('Last name is required.');
-  if (age === undefined || age === null || Number.isNaN(Number(age)) || Number(age) < 0) {
-    errors.push('A valid age is required.');
+
+  const dob = dateOfBirth ? new Date(dateOfBirth) : null;
+  if (!dateOfBirth || Number.isNaN(dob?.getTime())) {
+    errors.push('A valid date of birth is required.');
+  } else if (dob > new Date()) {
+    errors.push('Date of birth cannot be in the future.');
   }
+
   if (!password || !PASSWORD_RULE.test(password)) {
     errors.push('Password must be at least 8 characters and include an uppercase letter.');
   }
@@ -46,8 +66,8 @@ router.post('/bootstrap', async (req, res) => {
     return res.status(409).json({ error: 'Bootstrap has already been completed.' });
   }
 
-  const { email, password, firstName, lastName, age } = req.body || {};
-  const errors = validateRegistrationFields({ email, password, firstName, lastName, age });
+  const { email, password, firstName, lastName, dateOfBirth } = req.body || {};
+  const errors = validateRegistrationFields({ email, password, firstName, lastName, dateOfBirth });
   if (errors.length) return res.status(400).json({ errors });
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -58,7 +78,7 @@ router.post('/bootstrap', async (req, res) => {
     firstName,
     lastName,
     displayName: `${firstName} ${lastName}`,
-    age: Number(age),
+    dateOfBirth,
     isSuperAdmin: true,
     groupAdminOf: [],
     groupMemberships: [],
@@ -85,8 +105,8 @@ router.post('/auth/register', async (req, res) => {
     return res.status(409).json({ error: 'System has not been bootstrapped yet.' });
   }
 
-  const { email, password, firstName, lastName, age } = req.body || {};
-  const errors = validateRegistrationFields({ email, password, firstName, lastName, age });
+  const { email, password, firstName, lastName, dateOfBirth } = req.body || {};
+  const errors = validateRegistrationFields({ email, password, firstName, lastName, dateOfBirth });
   if (errors.length) return res.status(400).json({ errors });
 
   const normalizedEmail = email.toLowerCase();
@@ -102,7 +122,7 @@ router.post('/auth/register', async (req, res) => {
     firstName,
     lastName,
     displayName: `${firstName} ${lastName}`,
-    age: Number(age),
+    dateOfBirth,
     isSuperAdmin: false,
     groupAdminOf: [],
     groupMemberships: [],
