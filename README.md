@@ -1,5 +1,8 @@
 # Fabulari
 
+**Name:** I Wayan Rasya Nugraha Kusuma
+**Student Number:** s5445871
+
 Multi-user text-and-image chat application built with the MEAN stack (MongoDB, Express, Angular, Node.js)
 for 3813ICT Full Stack Development.
 
