@@ -35,7 +35,7 @@ export class LoginComponent implements OnInit {
     this.loading.set(true);
     try {
       await this.auth.login(this.email, this.password);
-      // TODO: navigate to /groups once GroupListComponent exists.
+      this.router.navigateByUrl('/groups');
     } catch (err: any) {
       this.errorMessage.set(err?.error?.error ?? 'Something went wrong. Please try again.');
     } finally {
