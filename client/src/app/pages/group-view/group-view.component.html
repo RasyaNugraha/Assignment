@@ -1,0 +1,49 @@
+<div class="group-view">
+  <header class="group-header" [style.borderTopColor]="group().backgroundColor">
+    <a class="back-link" routerLink="/groups">&larr; Groups</a>
+    <h1 class="group-header__title">{{ group().title }}</h1>
+    <p class="group-header__desc">{{ group().description }}</p>
+    <p class="group-header__meta">Age limit: {{ group().minAge || 'None' }}</p>
+  </header>
+
+  <div class="group-body" [class.group-body--admin]="isGroupAdmin()">
+    <section class="rooms-panel">
+      <h2 class="panel__title">Rooms</h2>
+      <ul class="room-list">
+        @for (room of rooms(); track room.id) {
+          <li class="room-list__item">
+            <span>#{{ room.name }}</span>
+            <a class="btn btn--blue btn--sm" [routerLink]="['/groups', groupId(), 'rooms', room.id]">Enter</a>
+          </li>
+        } @empty {
+          <li class="room-list__empty">No rooms yet.</li>
+        }
+      </ul>
+
+      <button class="btn btn--outline btn--sm" type="button" (click)="showRequestRoomForm.set(!showRequestRoomForm())">
+        + Request New Room
+      </button>
+
+      @if (showRequestRoomForm()) {
+        <form class="request-form" (ngSubmit)="onRequestRoom()">
+          <label class="field">
+            <span class="field__label">Room name</span>
+            <input class="field__input" type="text" [(ngModel)]="newRoomName" name="roomName" required />
+          </label>
+          <label class="field">
+            <span class="field__label">Minimum age</span>
+            <input class="field__input" type="number" min="0" [(ngModel)]="newRoomMinAge" name="roomMinAge" />
+          </label>
+          <button class="btn btn--coral btn--sm" type="submit">Send Request</button>
+        </form>
+      }
+    </section>
+
+    @if (isGroupAdmin()) {
+      <section class="admin-panel">
+        <h2 class="panel__title">Admin Panel</h2>
+        <p class="admin-panel__hint">Pending join requests, member list, and ban/edit controls land here once the Request queue exists (Week 6).</p>
+      </section>
+    }
+  </div>
+</div>
