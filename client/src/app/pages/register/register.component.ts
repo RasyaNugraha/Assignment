@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -15,6 +15,9 @@ const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // mirrors server-side rule, R23
   styleUrl: './register.component.css',
 })
 export class RegisterComponent {
+  private auth = inject(AuthService);
+  private router = inject(Router);
+
   firstName = '';
   lastName = '';
   email = '';
@@ -24,11 +27,6 @@ export class RegisterComponent {
 
   loading = signal(false);
   errorMessage = signal<string | null>(null);
-
-  constructor(
-    private auth: AuthService,
-    private router: Router,
-  ) {}
 
   async onSubmit() {
     this.errorMessage.set(null);

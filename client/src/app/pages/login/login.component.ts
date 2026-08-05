@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -13,15 +13,13 @@ import { AuthService } from '../../core/auth.service';
   styleUrl: './login.component.css',
 })
 export class LoginComponent implements OnInit {
+  private auth = inject(AuthService);
+  private router = inject(Router);
+
   email = '';
   password = '';
   loading = signal(false);
   errorMessage = signal<string | null>(null);
-
-  constructor(
-    private auth: AuthService,
-    private router: Router,
-  ) {}
 
   async ngOnInit() {
     // If nobody has bootstrapped the system yet, send everyone to /bootstrap
