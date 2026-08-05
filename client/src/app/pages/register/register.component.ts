@@ -18,7 +18,7 @@ export class RegisterComponent {
   firstName = '';
   lastName = '';
   email = '';
-  age: number | null = null;
+  dateOfBirth = '';
   password = '';
   confirmPassword = '';
 
@@ -49,9 +49,9 @@ export class RegisterComponent {
         password: this.password,
         firstName: this.firstName,
         lastName: this.lastName,
-        age: Number(this.age),
+        dateOfBirth: this.dateOfBirth,
       });
-      // TODO: navigate to /groups once GroupListComponent exists.
+      this.router.navigateByUrl('/groups');
     } catch (err: any) {
       const apiErrors = err?.error?.errors as string[] | undefined;
       this.errorMessage.set(apiErrors?.join(' ') ?? err?.error?.error ?? 'Something went wrong. Please try again.');

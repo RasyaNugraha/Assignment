@@ -142,7 +142,7 @@ decision rather than stating it outright, that is captured as an
 | R22 | Passwords are hashed before storage (e.g. bcrypt) — never stored in plain text. | Applies even in the Phase 1 JSON-file persistence layer, not just once Mongo is introduced. |
 | R23 | Password rule: minimum 8 characters, at least 1 uppercase letter. | Enforced client-side for UX and re-validated server-side. |
 | R24 | No forgot-password/reset flow — if a password is forgotten, the user creates a new account. | Explicitly ruled out by the client after discussing the complexity of out-of-band recovery. |
-| R25 | Required profile fields at registration: email, first name, last name, age, password. | Age is self-reported and unverified — used only for Room age-gating. |
+| R25 | Required profile fields at registration: email, first name, last name, date of birth, password. | Stored as `dateOfBirth` rather than a raw age number, so age doesn't go stale — age is derived server-side from it on every response. Self-reported and unverified, used only for Room age-gating. |
 
 ### 3.4 Messaging (Phase 2, documented now for architecture planning)
 
@@ -191,7 +191,7 @@ interface User {
   firstName: string;
   lastName: string;
   displayName: string;        // editable; defaults to "First Last" (R21)
-  age: number;                // self-reported (R25)
+  dateOfBirth: string;         // ISO date, self-reported (R25); age is derived from this, never stored directly
   isSuperAdmin: boolean;      // true for exactly one user (R1)
   groupAdminOf: string[];     // Group IDs this user administers (R6)
   groupMemberships: string[]; // Group IDs this user has joined

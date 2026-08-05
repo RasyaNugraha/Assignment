@@ -55,13 +55,13 @@ Requirements gathered from the client Q&A session in Week 2 lecture (Allan Brown
 ## 4. Bootstrap Process
 
 - Runs only if the system currently has zero users.
-- Collects: email, first name, last name, age, password.
+- Collects: email, first name, last name, date of birth, password.
 - Created user becomes Super Admin.
 - Process is disabled permanently afterward.
 
 ## 5. User Profile
 
-- Required fields: email, first name, last name, age (self-reported, unverified), password.
+- Required fields: email, first name, last name, date of birth (self-reported, unverified — age is derived from it, not stored directly), password.
 - Profile page: upload/change profile picture, display name can be changed (email/username cannot).
 - Profile pages are private (not viewable by other users).
 - Optional personal UI preferences (e.g. dark/light mode, font size).
