@@ -1,0 +1,27 @@
+<div class="room">
+  <header class="room__header">
+    <button class="back-btn" type="button" (click)="onLeave()">&larr;</button>
+    <h1 class="room__title">#{{ roomId() }}</h1>
+    <span class="room__meta">Placeholder — Phase 1</span>
+  </header>
+
+  <div class="room__messages">
+    @for (message of messages(); track message.sentAt) {
+      <div class="message">
+        <span class="message__avatar">{{ message.senderName.charAt(0) }}</span>
+        <div class="message__body">
+          <span class="message__meta"><strong>{{ message.senderName }}</strong> {{ message.sentAt }}</span>
+          <p class="message__text">{{ message.text }}</p>
+        </div>
+      </div>
+    }
+    <p class="room__notice">Real-time chat, image uploads, and message delete arrive in Phase 2 (Socket.IO).</p>
+  </div>
+
+  <form class="room__composer">
+    <input class="room__input" type="text" placeholder="Type a message..." disabled />
+    <button class="room__send" type="button" disabled>Send</button>
+  </form>
+
+  <button class="btn btn--outline" type="button" (click)="onLeave()">Leave Room</button>
+</div>

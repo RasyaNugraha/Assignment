@@ -1,0 +1,53 @@
+<div class="group-list">
+  <aside class="sidebar">
+    <h2 class="sidebar__title">My Groups</h2>
+    <ul class="sidebar__list">
+      @for (group of myGroups(); track group.id) {
+        <li>
+          <a class="sidebar__item" [routerLink]="['/groups', group.id]">{{ group.title }}</a>
+        </li>
+      } @empty {
+        <li class="sidebar__empty">You haven't joined any groups yet.</li>
+      }
+    </ul>
+    <button class="btn btn--blue" type="button" (click)="showRequestForm.set(!showRequestForm())">
+      + Request New Group
+    </button>
+
+    @if (showRequestForm()) {
+      <form class="request-form" (ngSubmit)="onRequestGroup()">
+        <label class="field">
+          <span class="field__label">Title</span>
+          <input class="field__input" type="text" maxlength="30" [(ngModel)]="newGroupTitle" name="title" required />
+        </label>
+        <label class="field">
+          <span class="field__label">Description</span>
+          <textarea class="field__input" maxlength="250" [(ngModel)]="newGroupDescription" name="description" required></textarea>
+        </label>
+        <label class="field">
+          <span class="field__label">Minimum Age</span>
+          <input class="field__input" type="number" min="0" [(ngModel)]="newGroupMinAge" name="minAge" />
+        </label>
+        <button class="btn btn--coral" type="submit">Send Request</button>
+      </form>
+    }
+  </aside>
+
+  <section class="main-panel">
+    <h2 class="main-panel__title">All Groups</h2>
+    <div class="group-grid">
+      @for (group of allGroups(); track group.id) {
+        <div class="group-card" [style.borderTopColor]="group.backgroundColor">
+          <h3 class="group-card__title">{{ group.title }}</h3>
+          <p class="group-card__desc">{{ group.description }}</p>
+          <p class="group-card__meta">Min age: {{ group.minAge || 'None' }}</p>
+          @if (isMember(group)) {
+            <a class="btn btn--blue btn--sm" [routerLink]="['/groups', group.id]">Open</a>
+          } @else {
+            <button class="btn btn--outline btn--sm" type="button" (click)="onJoinGroup(group)">Request to Join</button>
+          }
+        </div>
+      }
+    </div>
+  </section>
+</div>

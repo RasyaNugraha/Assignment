@@ -1,0 +1,68 @@
+<div class="profile">
+  <section class="profile__avatar-panel">
+    <div class="avatar-preview">
+      @if (auth.currentUser()?.avatarUrl) {
+        <img [src]="auth.currentUser()?.avatarUrl" alt="" />
+      } @else {
+        <span>{{ (auth.currentUser()?.displayName ?? '?').charAt(0) }}</span>
+      }
+    </div>
+    <input class="avatar-upload" type="file" accept="image/png,image/jpeg,image/gif" disabled />
+    <p class="avatar-hint">Avatar upload wiring lands in Week 5.</p>
+  </section>
+
+  <section class="profile__details-panel">
+    <form class="profile-card" (ngSubmit)="onSaveDisplayName()">
+      <h2 class="profile-card__title">Profile</h2>
+      <label class="field">
+        <span class="field__label">Display Name</span>
+        <input class="field__input" type="text" [(ngModel)]="displayName" name="displayName" />
+      </label>
+      <label class="field">
+        <span class="field__label">Email</span>
+        <input class="field__input" type="email" [value]="auth.currentUser()?.email" name="email" readonly />
+      </label>
+      <button class="btn btn--blue" type="submit">Save</button>
+    </form>
+
+    <form class="profile-card" (ngSubmit)="onChangePassword()">
+      <h2 class="profile-card__title">Change Password</h2>
+      @if (passwordMessage()) {
+        <p class="hint">{{ passwordMessage() }}</p>
+      }
+      <label class="field">
+        <span class="field__label">Old Password</span>
+        <input class="field__input" type="password" [(ngModel)]="oldPassword" name="oldPassword" />
+      </label>
+      <label class="field">
+        <span class="field__label">New Password</span>
+        <input class="field__input" type="password" [(ngModel)]="newPassword" name="newPassword" />
+      </label>
+      <label class="field">
+        <span class="field__label">Confirm New Password</span>
+        <input class="field__input" type="password" [(ngModel)]="confirmNewPassword" name="confirmNewPassword" />
+      </label>
+      <button class="btn btn--coral" type="submit">Update Password</button>
+    </form>
+
+    <form class="profile-card" (ngSubmit)="onSavePreferences()">
+      <h2 class="profile-card__title">Preferences</h2>
+      <label class="field">
+        <span class="field__label">Theme</span>
+        <select class="field__input" [(ngModel)]="theme" name="theme">
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field__label">Font Size</span>
+        <select class="field__input" [(ngModel)]="fontSize" name="fontSize">
+          <option value="small">Small</option>
+          <option value="medium">Medium</option>
+          <option value="large">Large</option>
+        </select>
+      </label>
+      <button class="btn btn--outline" type="submit">Save Preferences</button>
+    </form>
+  </section>
+</div>
