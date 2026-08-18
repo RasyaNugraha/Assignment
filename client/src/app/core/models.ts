@@ -1,8 +1,7 @@
 // Shared frontend contracts mirroring the backend entities in Phase1.md
 // section 4 (§5.3: "one shared contract, no duplicate frontend-only shapes").
-// Group/Room API routes don't exist yet (planned for Week 5-6 per
-// TIMELINE.md), so pages using these interfaces currently render mock data
-// — see the MOCK_* comments in group-list / group-view / room components.
+// GET /api/groups is live as of Week 5 (server/routes/groups.js); Room
+// routes are still planned — RoomComponent still renders mock data for now.
 
 export interface Group {
   id: string;
@@ -13,6 +12,26 @@ export interface Group {
   adminIds: string[];
   memberIds: string[];
   createdAt: string;
+  // Viewer-relative flags — computed server-side per request in
+  // server/routes/groups.js's toPublicGroup(), so the client never has to
+  // cross-reference groups against a separate membership list itself.
+  isMember?: boolean;
+  isAdmin?: boolean;
+  hasPendingJoinRequest?: boolean;
+}
+
+export interface GroupRequest {
+  id: string;
+  type: 'group_creation' | 'group_join';
+  requesterId: string;
+  status: 'pending' | 'approved' | 'denied';
+  createdAt: string;
+  // group_creation only:
+  title?: string;
+  description?: string;
+  minAge?: number;
+  // group_join only:
+  groupId?: string;
 }
 
 export interface Room {

@@ -1,51 +1,14 @@
-import { Component, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
 import { Group } from '../../core/models';
+import { GroupService } from '../../core/group.service';
 
-// WIREFRAME.md §4 "Main / Group List Screen". Dummy/mock data for now —
-// GroupService + /api/groups and /api/requests/group-creation land in
-// Week 5-6 per TIMELINE.md; this screen just proves out the layout and
-// interaction shape per the Phase 1 "prototype in Angular" brief.
-const MOCK_MY_GROUPS: Group[] = [
-  {
-    id: 'g1',
-    title: 'Griffith Full Stack 3813ICT',
-    description: 'Course chat for 3813ICT students.',
-    minAge: 0,
-    backgroundColor: '#4a9eff',
-    adminIds: [],
-    memberIds: [],
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const MOCK_ALL_GROUPS: Group[] = [
-  ...MOCK_MY_GROUPS,
-  {
-    id: 'g2',
-    title: 'Board Game Nights',
-    description: 'Weekly board game meetups and chat.',
-    minAge: 13,
-    backgroundColor: '#f6c358',
-    adminIds: [],
-    memberIds: [],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'g3',
-    title: 'Late Night Coders',
-    description: 'For people who ship at 2am.',
-    minAge: 0,
-    backgroundColor: '#f0605c',
-    adminIds: [],
-    memberIds: [],
-    createdAt: new Date().toISOString(),
-  },
-];
-
+// WIREFRAME.md §4 "Main / Group List Screen". GET /api/groups is live as of
+// Week 5 — allGroups() holds the real list, myGroups() is derived from it
+// via the isMember flag the server attaches per-viewer.
 @Component({
   selector: 'app-group-list',
   standalone: true,
@@ -53,27 +16,68 @@ const MOCK_ALL_GROUPS: Group[] = [
   templateUrl: './group-list.component.html',
   styleUrl: './group-list.component.css',
 })
-export class GroupListComponent {
-  myGroups = signal<Group[]>(MOCK_MY_GROUPS);
-  allGroups = signal<Group[]>(MOCK_ALL_GROUPS);
+export class GroupListComponent implements OnInit {
+  private groupService = inject(GroupService);
+
+  allGroups = signal<Group[]>([]);
+  myGroups = computed(() => this.allGroups().filter((g) => g.isMember));
+  loading = signal(true);
+  errorMessage = signal('');
 
   showRequestForm = signal(false);
   newGroupTitle = '';
   newGroupDescription = '';
   newGroupMinAge = 0;
+  requestSent = signal(false);
+
+  ngOnInit(): void {
+    this.loadGroups();
+  }
+
+  private async loadGroups(): Promise<void> {
+    this.loading.set(true);
+    try {
+      const groups = await this.groupService.getAll();
+      this.allGroups.set(groups);
+      this.errorMessage.set('');
+    } catch {
+      this.errorMessage.set('Could not load groups. Try refreshing.');
+    } finally {
+      this.loading.set(false);
+    }
+  }
 
   isMember(group: Group): boolean {
-    return this.myGroups().some((g) => g.id === group.id);
+    return !!group.isMember;
   }
 
-  // TODO: POST /api/requests/group-creation once the Request queue exists (Week 6).
-  onRequestGroup() {
-    this.showRequestForm.set(false);
-    this.newGroupTitle = '';
-    this.newGroupDescription = '';
-    this.newGroupMinAge = 0;
+  async onRequestGroup(): Promise<void> {
+    if (!this.newGroupTitle.trim()) return;
+    try {
+      await this.groupService.requestNewGroup({
+        title: this.newGroupTitle,
+        description: this.newGroupDescription,
+        minAge: this.newGroupMinAge,
+      });
+      this.requestSent.set(true);
+      this.showRequestForm.set(false);
+      this.newGroupTitle = '';
+      this.newGroupDescription = '';
+      this.newGroupMinAge = 0;
+    } catch {
+      this.errorMessage.set('Could not send the group request. Try again.');
+    }
   }
 
-  // TODO: POST /api/requests/group-join once the Request queue exists (Week 6).
-  onJoinGroup(_group: Group) {}
+  async onJoinGroup(group: Group): Promise<void> {
+    try {
+      await this.groupService.requestToJoin(group.id);
+      // Reflect the pending state immediately without a full reload.
+      this.allGroups.update((groups) =>
+        groups.map((g) => (g.id === group.id ? { ...g, hasPendingJoinRequest: true } : g)),
+      );
+    } catch {
+      this.errorMessage.set('Could not send the join request. Try again.');
+    }
+  }
 }

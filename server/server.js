@@ -3,6 +3,8 @@ const path = require('path');
 const session = require('express-session');
 
 const authRoutes = require('./routes/auth');
+const groupRoutes = require('./routes/groups');
+const requestRoutes = require('./routes/requests');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,9 +25,11 @@ app.get('/api/status', (req, res) => {
 });
 
 app.use('/api', authRoutes);
+app.use('/api', groupRoutes);
+app.use('/api', requestRoutes);
 
-// Other route groups (users, groups, rooms, requests, admin logs) land here
-// as they're built out per Phase1.md section 6.
+// Other route groups (rooms, messages, admin logs) land here as they're
+// built out per Phase1.md section 6.
 
 app.listen(PORT, () => {
   console.log(`Fabulari server listening on http://localhost:${PORT}`);

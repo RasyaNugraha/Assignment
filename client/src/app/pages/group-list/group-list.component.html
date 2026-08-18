@@ -31,23 +31,40 @@
         <button class="btn btn--coral" type="submit">Send Request</button>
       </form>
     }
+
+    @if (requestSent()) {
+      <p class="sidebar__note">Request sent — a Super Admin needs to approve it.</p>
+    }
   </aside>
 
   <section class="main-panel">
     <h2 class="main-panel__title">All Groups</h2>
-    <div class="group-grid">
-      @for (group of allGroups(); track group.id) {
-        <div class="group-card" [style.borderTopColor]="group.backgroundColor">
-          <h3 class="group-card__title">{{ group.title }}</h3>
-          <p class="group-card__desc">{{ group.description }}</p>
-          <p class="group-card__meta">Min age: {{ group.minAge || 'None' }}</p>
-          @if (isMember(group)) {
-            <a class="btn btn--blue btn--sm" [routerLink]="['/groups', group.id]">Open</a>
-          } @else {
-            <button class="btn btn--outline btn--sm" type="button" (click)="onJoinGroup(group)">Request to Join</button>
-          }
-        </div>
-      }
-    </div>
+
+    @if (errorMessage()) {
+      <p class="main-panel__error">{{ errorMessage() }}</p>
+    }
+
+    @if (loading()) {
+      <p class="main-panel__loading">Loading groups…</p>
+    } @else {
+      <div class="group-grid">
+        @for (group of allGroups(); track group.id) {
+          <div class="group-card" [style.borderTopColor]="group.backgroundColor">
+            <h3 class="group-card__title">{{ group.title }}</h3>
+            <p class="group-card__desc">{{ group.description }}</p>
+            <p class="group-card__meta">Min age: {{ group.minAge || 'None' }}</p>
+            @if (isMember(group)) {
+              <a class="btn btn--blue btn--sm" [routerLink]="['/groups', group.id]">Open</a>
+            } @else if (group.hasPendingJoinRequest) {
+              <button class="btn btn--outline btn--sm" type="button" disabled>Request Pending</button>
+            } @else {
+              <button class="btn btn--outline btn--sm" type="button" (click)="onJoinGroup(group)">Request to Join</button>
+            }
+          </div>
+        } @empty {
+          <p class="main-panel__empty">No groups yet — be the first to request one.</p>
+        }
+      </div>
+    }
   </section>
 </div>
