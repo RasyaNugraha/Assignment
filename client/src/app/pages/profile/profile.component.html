@@ -8,12 +8,15 @@
       }
     </div>
     <input class="avatar-upload" type="file" accept="image/png,image/jpeg,image/gif" disabled />
-    <p class="avatar-hint">Avatar upload wiring lands in Week 5.</p>
+    <p class="avatar-hint">Avatar upload isn't wired up yet — needs file-upload handling on the server.</p>
   </section>
 
   <section class="profile__details-panel">
     <form class="profile-card" (ngSubmit)="onSaveDisplayName()">
       <h2 class="profile-card__title">Profile</h2>
+      @if (displayNameMessage()) {
+        <p class="hint">{{ displayNameMessage() }}</p>
+      }
       <label class="field">
         <span class="field__label">Display Name</span>
         <input class="field__input" type="text" [(ngModel)]="displayName" name="displayName" />
@@ -47,6 +50,9 @@
 
     <form class="profile-card" (ngSubmit)="onSavePreferences()">
       <h2 class="profile-card__title">Preferences</h2>
+      @if (preferencesMessage()) {
+        <p class="hint">{{ preferencesMessage() }}</p>
+      }
       <label class="field">
         <span class="field__label">Theme</span>
         <select class="field__input" [(ngModel)]="theme" name="theme">
