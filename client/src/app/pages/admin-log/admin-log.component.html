@@ -1,0 +1,36 @@
+<div class="admin-log">
+  <h1 class="admin-log__title">Admin Log</h1>
+  <p class="admin-log__subtitle">Every administrative action — accounts, groups, rooms, bans — is logged here. Regular chat messages are never logged.</p>
+
+  <div class="admin-log__filter">
+    <label class="field">
+      <span class="field__label">Filter by type</span>
+      <select class="field__input" [ngModel]="actionFilter()" (ngModelChange)="onFilterChange($event)">
+        <option value="all">All actions</option>
+        @for (type of actionTypes(); track type) {
+          <option [value]="type">{{ type }}</option>
+        }
+      </select>
+    </label>
+  </div>
+
+  @if (errorMessage()) {
+    <p class="admin-log__error">{{ errorMessage() }}</p>
+  }
+
+  @if (loading()) {
+    <p class="admin-log__loading">Loading…</p>
+  } @else {
+    <ul class="log-list">
+      @for (entry of filteredLogs(); track entry.id) {
+        <li class="log-list__item">
+          <span class="log-list__action">{{ entry.action }}</span>
+          <span class="log-list__details">{{ entry.details }}</span>
+          <span class="log-list__time">{{ entry.timestamp | date: 'medium' }}</span>
+        </li>
+      } @empty {
+        <li class="log-list__empty">No log entries yet.</li>
+      }
+    </ul>
+  }
+</div>
