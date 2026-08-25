@@ -1,10 +1,8 @@
 import { Routes } from '@angular/router';
 
-import { authGuard } from './core/auth.guard';
+import { authGuard, superAdminGuard } from './core/auth.guard';
 
-// Phase1.md section 5.4 routing table. Admin queue/log routes aren't built
-// yet (Week 6 per TIMELINE.md) — auth.guard.ts already exports
-// superAdminGuard, ready to attach to those routes when they land.
+// Phase1.md section 5.4 routing table.
 export const routes: Routes = [
   { path: 'bootstrap', loadComponent: () => import('./pages/bootstrap/bootstrap.component').then((m) => m.BootstrapComponent) },
   { path: 'login', loadComponent: () => import('./pages/login/login.component').then((m) => m.LoginComponent) },
@@ -18,6 +16,16 @@ export const routes: Routes = [
       { path: 'groups/:groupId', loadComponent: () => import('./pages/group-view/group-view.component').then((m) => m.GroupViewComponent) },
       { path: 'groups/:groupId/rooms/:roomId', loadComponent: () => import('./pages/room/room.component').then((m) => m.RoomComponent) },
       { path: 'profile', loadComponent: () => import('./pages/profile/profile.component').then((m) => m.ProfileComponent) },
+      {
+        path: 'admin/queue',
+        canActivate: [superAdminGuard],
+        loadComponent: () => import('./pages/admin-queue/admin-queue.component').then((m) => m.AdminQueueComponent),
+      },
+      {
+        path: 'admin/logs',
+        canActivate: [superAdminGuard],
+        loadComponent: () => import('./pages/admin-log/admin-log.component').then((m) => m.AdminLogComponent),
+      },
       { path: '', pathMatch: 'full', redirectTo: 'groups' },
     ],
   },

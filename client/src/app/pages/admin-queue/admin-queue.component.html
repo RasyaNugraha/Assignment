@@ -1,0 +1,30 @@
+<div class="admin-queue">
+  <h1 class="admin-queue__title">Admin Queue</h1>
+  <p class="admin-queue__subtitle">Pending Group creation requests — approving one appoints the requester as that Group's Group Admin.</p>
+
+  @if (errorMessage()) {
+    <p class="admin-queue__error">{{ errorMessage() }}</p>
+  }
+
+  @if (loading()) {
+    <p class="admin-queue__loading">Loading…</p>
+  } @else {
+    <ul class="request-list">
+      @for (req of groupCreationRequests(); track req.id) {
+        <li class="request-list__item">
+          <div class="request-list__info">
+            <strong>{{ req.title }}</strong>
+            <span class="request-list__meta">requested by {{ req.requesterDisplayName }} &middot; min age {{ req.minAge || 'None' }}</span>
+            <p class="request-list__desc">{{ req.description }}</p>
+          </div>
+          <span class="request-list__actions">
+            <button class="btn btn--blue btn--sm" type="button" (click)="onApprove(req)">Approve</button>
+            <button class="btn btn--outline btn--sm" type="button" (click)="onDeny(req)">Deny</button>
+          </span>
+        </li>
+      } @empty {
+        <li class="request-list__empty">No pending group creation requests.</li>
+      }
+    </ul>
+  }
+</div>
