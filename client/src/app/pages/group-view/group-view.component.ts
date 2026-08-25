@@ -4,27 +4,26 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 
-import { Group, Room } from '../../core/models';
+import { GroupDetail, GroupRequest } from '../../core/models';
 import { AuthService } from '../../core/auth.service';
+import { GroupService } from '../../core/group.service';
+import { RequestService } from '../../core/request.service';
 
-// WIREFRAME.md §5 "Group View Screen". Mock group/room data — real
-// GroupService/RoomService + /api/groups/:id, /api/groups/:id/rooms land in
-// Week 5-6 per TIMELINE.md.
-const MOCK_GROUP: Group = {
-  id: 'g1',
-  title: 'Griffith Full Stack 3813ICT',
-  description: 'Course chat for 3813ICT students.',
+// WIREFRAME.md §5 "Group View Screen". GET /api/groups/:id (live as of
+// Week 5) supplies the real group + its rooms; the admin panel's pending
+// join/room requests come from GET /api/requests, which the server already
+// scopes to what this Group Admin is allowed to resolve.
+const EMPTY_GROUP: GroupDetail = {
+  id: '',
+  title: '',
+  description: '',
   minAge: 0,
-  backgroundColor: '#4a9eff',
+  backgroundColor: null,
   adminIds: [],
   memberIds: [],
-  createdAt: new Date().toISOString(),
+  createdAt: '',
+  rooms: [],
 };
-
-const MOCK_ROOMS: Room[] = [
-  { id: 'r1', groupId: 'g1', name: 'general', minAge: 0, createdAt: new Date().toISOString() },
-  { id: 'r2', groupId: 'g1', name: 'assignment-help', minAge: 0, createdAt: new Date().toISOString() },
-];
 
 @Component({
   selector: 'app-group-view',
@@ -37,6 +36,8 @@ export class GroupViewComponent implements OnInit, OnDestroy {
   // inject() rather than constructor params — these fields are read during
   // property initialization, which runs before a constructor body would.
   private route = inject(ActivatedRoute);
+  private groupService = inject(GroupService);
+  private requestService = inject(RequestService);
   public auth = inject(AuthService);
 
   // Per Week 4 lecture: route.snapshot.paramMap only reads the param once,
@@ -44,26 +45,38 @@ export class GroupViewComponent implements OnInit, OnDestroy {
   // instance if you navigate from one /groups/:groupId to another without
   // it being destroyed (e.g. clicking a different group in a list rendered
   // by this same route), so a snapshot-only read would go stale. Subscribing
-  // to paramMap keeps groupId in sync for as long as the component lives.
+  // to paramMap keeps groupId in sync — and re-fetches this group's data —
+  // for as long as the component lives.
   groupId = signal('');
   private paramSub?: Subscription;
 
-  group = signal<Group>(MOCK_GROUP);
-  rooms = signal<Room[]>(MOCK_ROOMS);
+  group = signal<GroupDetail>(EMPTY_GROUP);
+  loading = signal(true);
+  errorMessage = signal('');
 
   showRequestRoomForm = signal(false);
   newRoomName = '';
   newRoomMinAge = 0;
+  roomRequestSent = signal(false);
 
-  // Placeholder — real check compares auth.currentUser().groupAdminOf against
-  // groupId once membership/admin data comes from the server (R6).
-  isGroupAdmin = computed(() => this.auth.currentUser()?.isSuperAdmin ?? false);
+  // Server computes this per-viewer in toPublicGroup() (routes/groups.js),
+  // so it's always in sync with the real adminIds list — no need to
+  // re-derive it from auth.currentUser().groupAdminOf here.
+  isGroupAdmin = computed(() => this.group().isAdmin ?? false);
+
+  pendingRequests = signal<GroupRequest[]>([]);
+  pendingJoinRequests = computed(() =>
+    this.pendingRequests().filter((r) => r.type === 'group_join' && r.groupId === this.groupId()),
+  );
+  pendingRoomRequests = computed(() =>
+    this.pendingRequests().filter((r) => r.type === 'room_creation' && r.groupId === this.groupId()),
+  );
 
   ngOnInit() {
     this.paramSub = this.route.paramMap.subscribe((params) => {
-      this.groupId.set(params.get('groupId') ?? '');
-      // TODO: re-fetch this group's real data from /api/groups/:id here once
-      // that endpoint exists (Week 5-6) — currently always shows MOCK_GROUP.
+      const id = params.get('groupId') ?? '';
+      this.groupId.set(id);
+      if (id) this.loadGroup(id);
     });
   }
 
@@ -71,10 +84,60 @@ export class GroupViewComponent implements OnInit, OnDestroy {
     this.paramSub?.unsubscribe();
   }
 
-  // TODO: POST /api/requests/room-creation once the Request queue exists (Week 6).
-  onRequestRoom() {
-    this.showRequestRoomForm.set(false);
-    this.newRoomName = '';
-    this.newRoomMinAge = 0;
+  private async loadGroup(id: string): Promise<void> {
+    this.loading.set(true);
+    try {
+      const group = await this.groupService.getById(id);
+      this.group.set(group);
+      this.errorMessage.set('');
+      if (group.isAdmin) await this.loadPendingRequests();
+    } catch {
+      this.errorMessage.set('Could not load this group. Try refreshing.');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  private async loadPendingRequests(): Promise<void> {
+    try {
+      this.pendingRequests.set(await this.requestService.getPending());
+    } catch {
+      // Non-fatal — the group itself already loaded; the admin panel just
+      // shows nothing pending until the next successful refresh.
+    }
+  }
+
+  async onRequestRoom(): Promise<void> {
+    if (!this.newRoomName.trim()) return;
+    try {
+      await this.groupService.requestRoom(this.groupId(), {
+        name: this.newRoomName,
+        minAge: this.newRoomMinAge,
+      });
+      this.roomRequestSent.set(true);
+      this.showRequestRoomForm.set(false);
+      this.newRoomName = '';
+      this.newRoomMinAge = 0;
+    } catch {
+      this.errorMessage.set('Could not send the room request. Try again.');
+    }
+  }
+
+  async onApprove(request: GroupRequest): Promise<void> {
+    try {
+      await this.requestService.approve(request.id);
+      await this.loadGroup(this.groupId());
+    } catch {
+      this.errorMessage.set('Could not approve that request. Try again.');
+    }
+  }
+
+  async onDeny(request: GroupRequest): Promise<void> {
+    try {
+      await this.requestService.deny(request.id);
+      await this.loadPendingRequests();
+    } catch {
+      this.errorMessage.set('Could not deny that request. Try again.');
+    }
   }
 }
