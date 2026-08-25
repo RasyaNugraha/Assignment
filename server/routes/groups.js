@@ -12,6 +12,7 @@ const router = express.Router();
 
 const TITLE_MAX = 30; // R13
 const DESCRIPTION_MAX = 250; // R13
+const ROOM_NAME_MAX = 30;
 
 // Adds request-scoped flags for the current viewer — kept server-side so the
 // client never has to cross-reference groups against a separate membership
@@ -113,6 +114,43 @@ router.post('/groups/:id/join', requireAuth, (req, res) => {
     requesterId: req.currentUser.id,
     groupId: group.id,
     status: 'pending',
+    createdAt: new Date().toISOString(),
+    resolvedAt: null,
+    resolvedBy: null,
+  };
+  db.insert('requests', request);
+  res.status(201).json(request);
+});
+
+// POST /api/groups/:id/rooms/requests — a member asks their Group Admin(s)
+// for a new Room (R12). The Group Admin still performs the actual creation,
+// via the approve step in routes/requests.js.
+router.post('/groups/:id/rooms/requests', requireAuth, (req, res) => {
+  const group = db.findById('groups', req.params.id);
+  if (!group) return res.status(404).json({ error: 'Group not found.' });
+  if (!group.memberIds.includes(req.currentUser.id)) {
+    return res.status(403).json({ error: 'Only members of this group can request a room.' });
+  }
+
+  const { name, minAge = 0 } = req.body || {};
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'A room name is required.' });
+  }
+  if (name.length > ROOM_NAME_MAX) {
+    return res.status(400).json({ error: `Room name must be ${ROOM_NAME_MAX} characters or fewer.` });
+  }
+  if (!Number.isInteger(minAge) || minAge < 0) {
+    return res.status(400).json({ error: 'Minimum age must be a non-negative whole number.' });
+  }
+
+  const request = {
+    id: randomUUID(),
+    type: 'room_creation',
+    requesterId: req.currentUser.id,
+    groupId: group.id,
+    status: 'pending',
+    name: name.trim(),
+    minAge,
     createdAt: new Date().toISOString(),
     resolvedAt: null,
     resolvedBy: null,

@@ -1,7 +1,9 @@
 // Shared frontend contracts mirroring the backend entities in Phase1.md
 // section 4 (§5.3: "one shared contract, no duplicate frontend-only shapes").
-// GET /api/groups is live as of Week 5 (server/routes/groups.js); Room
-// routes are still planned — RoomComponent still renders mock data for now.
+// GET /api/groups is live as of Week 5 (server/routes/groups.js); room
+// requests + the request queue (approve/deny) are wired up as of Week 5
+// too — RoomComponent (the actual chat view) still renders a placeholder,
+// since live chat is Phase 2.
 
 export interface Group {
   id: string;
@@ -20,18 +22,31 @@ export interface Group {
   hasPendingJoinRequest?: boolean;
 }
 
+export interface GroupDetail extends Group {
+  rooms: Room[];
+}
+
+export type RequestType = 'group_creation' | 'group_join' | 'room_creation';
+
 export interface GroupRequest {
   id: string;
-  type: 'group_creation' | 'group_join';
+  type: RequestType;
   requesterId: string;
   status: 'pending' | 'approved' | 'denied';
   createdAt: string;
   // group_creation only:
   title?: string;
   description?: string;
-  minAge?: number;
-  // group_join only:
+  // group_join / room_creation:
   groupId?: string;
+  // room_creation only:
+  name?: string;
+  minAge?: number;
+  // Display-friendly fields the server attaches (routes/requests.js
+  // toPublicRequest()) so the queue UI doesn't have to look users/groups up
+  // itself.
+  requesterDisplayName?: string;
+  groupTitle?: string | null;
 }
 
 export interface Room {

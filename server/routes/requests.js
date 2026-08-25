@@ -1,7 +1,7 @@
 // Request queue — Phase1.md §6, REQUIREMENTS.md §5.
 // General Users can only *request* things; who can approve depends on the
 // request type: Super Admin approves group-creation requests, a Group's own
-// Group Admin(s) approve join requests for that Group.
+// Group Admin(s) approve join and room-creation requests for that Group.
 
 const express = require('express');
 const { randomUUID } = require('crypto');
@@ -14,18 +14,30 @@ function canResolve(request, currentUser) {
   if (request.type === 'group_creation') {
     return currentUser.isSuperAdmin;
   }
-  if (request.type === 'group_join') {
+  if (request.type === 'group_join' || request.type === 'room_creation') {
     const group = db.findById('groups', request.groupId);
     return group ? group.adminIds.includes(currentUser.id) : false;
   }
   return false;
 }
 
+// Adds display-friendly fields so the client doesn't have to cross-reference
+// users/groups itself just to render "who" and "which group" in the queue UI.
+function toPublicRequest(request) {
+  const requester = db.findById('users', request.requesterId);
+  const group = request.groupId ? db.findById('groups', request.groupId) : null;
+  return {
+    ...request,
+    requesterDisplayName: requester ? requester.displayName : 'Unknown user',
+    groupTitle: group ? group.title : null,
+  };
+}
+
 // GET /api/requests — role-scoped queue of pending requests.
 router.get('/requests', requireAuth, (req, res) => {
   const pending = db.findMany('requests', (r) => r.status === 'pending');
   const visible = pending.filter((r) => canResolve(r, req.currentUser));
-  res.json(visible);
+  res.json(visible.map(toPublicRequest));
 });
 
 router.post('/requests/:id/approve', requireAuth, (req, res) => {
@@ -74,6 +86,22 @@ router.post('/requests/:id/approve', requireAuth, (req, res) => {
       targetId: group ? group.id : null,
       details: `${req.currentUser.displayName} approved ${requester ? requester.displayName : 'a user'} joining "${group ? group.title : 'a group'}".`,
     });
+  } else if (request.type === 'room_creation') {
+    const group = db.findById('groups', request.groupId);
+    const room = {
+      id: randomUUID(),
+      groupId: request.groupId,
+      name: request.name,
+      minAge: request.minAge,
+      createdAt: new Date().toISOString(),
+    };
+    db.insert('rooms', room);
+    db.logAdminAction({
+      action: 'room_created',
+      actorId: req.currentUser.id,
+      targetId: room.id,
+      details: `${req.currentUser.displayName} approved room "#${room.name}" in "${group ? group.title : 'a group'}".`,
+    });
   }
 
   const resolved = db.update('requests', request.id, {
@@ -81,7 +109,7 @@ router.post('/requests/:id/approve', requireAuth, (req, res) => {
     resolvedAt: new Date().toISOString(),
     resolvedBy: req.currentUser.id,
   });
-  res.json(resolved);
+  res.json(toPublicRequest(resolved));
 });
 
 router.post('/requests/:id/deny', requireAuth, (req, res) => {
@@ -105,7 +133,7 @@ router.post('/requests/:id/deny', requireAuth, (req, res) => {
     targetId: request.id,
     details: `${req.currentUser.displayName} denied a ${request.type.replace('_', ' ')} request.`,
   });
-  res.json(resolved);
+  res.json(toPublicRequest(resolved));
 });
 
 module.exports = router;

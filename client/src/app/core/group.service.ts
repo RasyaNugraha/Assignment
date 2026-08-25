@@ -1,11 +1,16 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Group, GroupRequest } from './models';
+import { Group, GroupDetail, GroupRequest } from './models';
 
 export interface RequestGroupFields {
   title: string;
   description: string;
+  minAge: number;
+}
+
+export interface RequestRoomFields {
+  name: string;
   minAge: number;
 }
 
@@ -29,8 +34,8 @@ export class GroupService {
     return this.toPromise(this.http.get<Group[]>('/api/groups'));
   }
 
-  getById(id: string): Promise<Group & { rooms: unknown[] }> {
-    return this.toPromise(this.http.get<Group & { rooms: unknown[] }>(`/api/groups/${id}`));
+  getById(id: string): Promise<GroupDetail> {
+    return this.toPromise(this.http.get<GroupDetail>(`/api/groups/${id}`));
   }
 
   requestNewGroup(fields: RequestGroupFields): Promise<GroupRequest> {
@@ -39,6 +44,10 @@ export class GroupService {
 
   requestToJoin(groupId: string): Promise<GroupRequest> {
     return this.toPromise(this.http.post<GroupRequest>(`/api/groups/${groupId}/join`, {}));
+  }
+
+  requestRoom(groupId: string, fields: RequestRoomFields): Promise<GroupRequest> {
+    return this.toPromise(this.http.post<GroupRequest>(`/api/groups/${groupId}/rooms/requests`, fields));
   }
 
   leave(groupId: string): Promise<Group> {
