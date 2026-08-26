@@ -87,6 +87,40 @@
               <li class="request-list__empty">No pending room requests.</li>
             }
           </ul>
+
+          <h3 class="admin-panel__subtitle">Members</h3>
+          @if (removalRequestSent()) {
+            <p class="sidebar__note">Removal request sent to the Super Admin.</p>
+          }
+          <ul class="request-list">
+            @for (member of members(); track member.id) {
+              <li class="request-list__item">
+                <span>{{ member.displayName }}</span>
+                @if (member.isAdmin) {
+                  <span class="badge">Admin</span>
+                } @else if (member.id !== auth.currentUser()?.id) {
+                  <span class="request-list__actions">
+                    <button class="btn btn--outline btn--sm" type="button" (click)="onAppointAdmin(member)">Make Admin</button>
+                    <button class="btn btn--coral btn--sm" type="button" (click)="onBanMember(member)">Ban</button>
+                    <button class="btn btn--outline btn--sm" type="button" (click)="onOpenRemovalForm(member)">Request Removal</button>
+                  </span>
+                }
+              </li>
+            } @empty {
+              <li class="request-list__empty">No members.</li>
+            }
+          </ul>
+
+          @if (removalTargetId()) {
+            <form class="request-form" (ngSubmit)="onSubmitRemoval()">
+              <label class="field">
+                <span class="field__label">Reason for permanent removal (sent to the Super Admin)</span>
+                <input class="field__input" type="text" [(ngModel)]="removalReason" name="removalReason" required />
+              </label>
+              <button class="btn btn--coral btn--sm" type="submit">Send to Super Admin</button>
+              <button class="btn btn--outline btn--sm" type="button" (click)="onCancelRemovalForm()">Cancel</button>
+            </form>
+          }
         </section>
       }
     </div>

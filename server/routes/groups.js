@@ -37,6 +37,17 @@ function currentUserOrNull(req) {
   return req.session.userId ? db.findById('users', req.session.userId) : null;
 }
 
+// Member display list for the admin-only "appoint co-admin" / "ban" / "request
+// removal" UI (R8/R9) — only attached to the response when the viewer is
+// already a Group Admin (see GET /groups/:id below), so regular
+// members/visitors never see this.
+function toMemberSummaries(group) {
+  return group.memberIds
+    .map((id) => db.findById('users', id))
+    .filter(Boolean)
+    .map((u) => ({ id: u.id, displayName: u.displayName, isAdmin: group.adminIds.includes(u.id) }));
+}
+
 // Same derivation as auth.js's computeAge() — duplicated locally rather than
 // imported since neither route file currently shares helpers via a common
 // module (each defines its own toPublicX()-style functions). Needed here so
@@ -60,13 +71,18 @@ router.get('/groups', (req, res) => {
   res.json(groups);
 });
 
-// GET /api/groups/:id — group detail plus its rooms.
+// GET /api/groups/:id — group detail plus its rooms. Group Admin viewers
+// additionally get a `members` list (R8/R9), so the client can render the
+// "appoint co-admin" / "ban" / "request removal" UI without a separate
+// members endpoint.
 router.get('/groups/:id', (req, res) => {
   const currentUser = currentUserOrNull(req);
   const group = db.findById('groups', req.params.id);
   if (!group) return res.status(404).json({ error: 'Group not found.' });
   const rooms = db.findMany('rooms', (r) => r.groupId === group.id);
-  res.json({ ...toPublicGroup(group, currentUser), rooms });
+  const publicGroup = toPublicGroup(group, currentUser);
+  const members = publicGroup.isAdmin ? toMemberSummaries(group) : undefined;
+  res.json({ ...publicGroup, rooms, ...(members ? { members } : {}) });
 });
 
 // GET /api/groups/:groupId/rooms/:roomId — R18: server-side re-validation of
@@ -138,6 +154,12 @@ router.post('/groups/:id/join', requireAuth, (req, res) => {
   if (group.memberIds.includes(req.currentUser.id)) {
     return res.status(409).json({ error: 'Already a member of this group.' });
   }
+  // R8 — a banned user stays banned from this specific Group (they can still
+  // join/use every other Group in the system, since the ban is scoped, not
+  // system-wide).
+  if ((group.bannedIds || []).includes(req.currentUser.id)) {
+    return res.status(403).json({ error: 'You have been banned from this group.' });
+  }
   const existingPending = db.findOne(
     'requests',
     (r) =>
@@ -203,7 +225,8 @@ router.post('/groups/:id/rooms/requests', requireAuth, (req, res) => {
 
 // POST /api/groups/:id/leave — immediate, no approval needed. Leaving a
 // group removes the user from it entirely (§6) — but a group must always
-// keep at least one admin (R32), so the sole admin can't leave.
+// keep at least one admin (R9), so the sole admin can't leave until they've
+// appointed a co-admin via POST /api/groups/:id/admins above.
 router.post('/groups/:id/leave', requireAuth, (req, res) => {
   const group = db.findById('groups', req.params.id);
   if (!group) return res.status(404).json({ error: 'Group not found.' });
@@ -235,6 +258,138 @@ router.post('/groups/:id/leave', requireAuth, (req, res) => {
   });
 
   res.json(toPublicGroup(updatedGroup, req.currentUser));
+});
+
+// POST /api/groups/:id/admins — an existing Group Admin appoints another
+// member of this Group as a co-admin (R9). This has to exist before a sole
+// admin is allowed to leave/step down — see the isSoleAdmin check in the
+// leave route above, which this unblocks.
+router.post('/groups/:id/admins', requireAuth, (req, res) => {
+  const group = db.findById('groups', req.params.id);
+  if (!group) return res.status(404).json({ error: 'Group not found.' });
+  if (!group.adminIds.includes(req.currentUser.id)) {
+    return res.status(403).json({ error: 'Only a Group Admin of this group can appoint another admin.' });
+  }
+
+  const { userId } = req.body || {};
+  if (!userId) return res.status(400).json({ error: 'A member to appoint is required.' });
+
+  const appointedUser = db.findById('users', userId);
+  if (!appointedUser || !group.memberIds.includes(userId)) {
+    return res.status(400).json({ error: 'Only existing members of this group can be appointed as admin.' });
+  }
+  if (group.adminIds.includes(userId)) {
+    return res.status(409).json({ error: 'That member is already a Group Admin.' });
+  }
+
+  const updatedGroup = db.update('groups', group.id, { adminIds: [...group.adminIds, userId] });
+  db.update('users', userId, { groupAdminOf: [...appointedUser.groupAdminOf, group.id] });
+  db.logAdminAction({
+    action: 'group_admin_appointed',
+    actorId: req.currentUser.id,
+    targetId: userId,
+    details: `${req.currentUser.displayName} appointed ${appointedUser.displayName} as a Group Admin of "${group.title}".`,
+  });
+
+  const rooms = db.findMany('rooms', (r) => r.groupId === group.id);
+  res.json({ ...toPublicGroup(updatedGroup, req.currentUser), rooms, members: toMemberSummaries(updatedGroup) });
+});
+
+// POST /api/groups/:id/ban — Group Admin bans a member from this Group only
+// (R8: "the user remains in the system and other Groups" — this never
+// touches the `users` collection, just this Group's membership + a
+// `bannedIds` list so they can't just request to rejoin). No escalation
+// needed: a Group Admin already has full authority over their own Group, so
+// unlike account deletion (R4, below) this doesn't go through the Super
+// Admin request queue.
+router.post('/groups/:id/ban', requireAuth, (req, res) => {
+  const group = db.findById('groups', req.params.id);
+  if (!group) return res.status(404).json({ error: 'Group not found.' });
+  if (!group.adminIds.includes(req.currentUser.id)) {
+    return res.status(403).json({ error: 'Only a Group Admin of this group can ban a member.' });
+  }
+
+  const { userId } = req.body || {};
+  if (!userId) return res.status(400).json({ error: 'A member to ban is required.' });
+  if (userId === req.currentUser.id) {
+    return res.status(400).json({ error: 'You cannot ban yourself.' });
+  }
+
+  const target = db.findById('users', userId);
+  if (!target || !group.memberIds.includes(userId)) {
+    return res.status(400).json({ error: 'Only existing members of this group can be banned.' });
+  }
+  if (group.adminIds.includes(userId)) {
+    return res.status(409).json({ error: 'A Group Admin cannot be banned — remove their admin status first.' });
+  }
+
+  const updatedGroup = db.update('groups', group.id, {
+    memberIds: group.memberIds.filter((id) => id !== userId),
+    bannedIds: [...(group.bannedIds || []), userId],
+  });
+  db.update('users', userId, {
+    groupMemberships: target.groupMemberships.filter((id) => id !== group.id),
+  });
+  db.logAdminAction({
+    action: 'group_member_banned',
+    actorId: req.currentUser.id,
+    targetId: userId,
+    details: `${req.currentUser.displayName} banned ${target.displayName} from "${group.title}".`,
+  });
+
+  const rooms = db.findMany('rooms', (r) => r.groupId === group.id);
+  res.json({ ...toPublicGroup(updatedGroup, req.currentUser), rooms, members: toMemberSummaries(updatedGroup) });
+});
+
+// POST /api/groups/:groupId/members/:userId/deletion-requests — R4: a Group
+// Admin escalates a member for full, system-wide account deletion. This is
+// deliberately NOT a direct action (unlike the ban above) — R4 requires the
+// Super Admin to have the final say, so this only files a
+// `account_deletion` request into the same unified queue used for
+// group/room requests; the actual deletion happens in the approve step in
+// routes/requests.js.
+router.post('/groups/:groupId/members/:userId/deletion-requests', requireAuth, (req, res) => {
+  const group = db.findById('groups', req.params.groupId);
+  if (!group) return res.status(404).json({ error: 'Group not found.' });
+  if (!group.adminIds.includes(req.currentUser.id)) {
+    return res.status(403).json({ error: 'Only a Group Admin of this group can request a member be removed.' });
+  }
+
+  const target = db.findById('users', req.params.userId);
+  if (!target || !group.memberIds.includes(target.id)) {
+    return res.status(400).json({ error: 'Only existing members of this group can be reported for removal.' });
+  }
+  if (target.isSuperAdmin) {
+    return res.status(400).json({ error: 'The Super Admin cannot be reported for removal.' });
+  }
+
+  const { reason = '' } = req.body || {};
+  if (!reason.trim()) {
+    return res.status(400).json({ error: 'A reason is required to escalate an account deletion request.' });
+  }
+
+  const existingPending = db.findOne(
+    'requests',
+    (r) => r.type === 'account_deletion' && r.targetUserId === target.id && r.status === 'pending',
+  );
+  if (existingPending) {
+    return res.status(409).json({ error: 'There is already a pending deletion request for this user.' });
+  }
+
+  const request = {
+    id: randomUUID(),
+    type: 'account_deletion',
+    requesterId: req.currentUser.id,
+    targetUserId: target.id,
+    groupId: group.id,
+    reason: reason.trim(),
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    resolvedAt: null,
+    resolvedBy: null,
+  };
+  db.insert('requests', request);
+  res.status(201).json(request);
 });
 
 // PATCH /api/groups/:id — Group Admin can edit description/minAge only

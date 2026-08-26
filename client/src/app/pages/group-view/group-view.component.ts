@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 
-import { GroupDetail, GroupRequest } from '../../core/models';
+import { GroupDetail, GroupRequest, MemberSummary } from '../../core/models';
 import { AuthService } from '../../core/auth.service';
 import { GroupService } from '../../core/group.service';
 import { RequestService } from '../../core/request.service';
@@ -80,6 +80,18 @@ export class GroupViewComponent implements OnInit, OnDestroy {
     this.pendingRequests().filter((r) => r.type === 'room_creation' && r.groupId === this.groupId()),
   );
 
+  // R8/R9 — member list is only present on the server response when the
+  // viewer isAdmin (routes/groups.js's toMemberSummaries()), so this just
+  // falls back to empty rather than needing its own loading state.
+  members = computed(() => this.group().members ?? []);
+
+  // R4 — inline "request removal" form, keyed to which member it's open for
+  // rather than a single boolean, so opening one member's form doesn't have
+  // to fight over shared state with another's.
+  removalTargetId = signal<string | null>(null);
+  removalReason = '';
+  removalRequestSent = signal(false);
+
   ngOnInit() {
     const ageBlocked = this.route.snapshot.queryParamMap.get('ageBlocked');
     if (ageBlocked !== null) this.ageBlockedMinAge.set(Number(ageBlocked));
@@ -149,6 +161,51 @@ export class GroupViewComponent implements OnInit, OnDestroy {
       await this.loadPendingRequests();
     } catch {
       this.errorMessage.set('Could not deny that request. Try again.');
+    }
+  }
+
+  // R9
+  async onAppointAdmin(member: MemberSummary): Promise<void> {
+    try {
+      await this.groupService.appointAdmin(this.groupId(), member.id);
+      await this.loadGroup(this.groupId());
+    } catch {
+      this.errorMessage.set('Could not appoint that member as admin. Try again.');
+    }
+  }
+
+  // R8 — direct action, no approval step (see GroupService.banMember()).
+  async onBanMember(member: MemberSummary): Promise<void> {
+    try {
+      await this.groupService.banMember(this.groupId(), member.id);
+      await this.loadGroup(this.groupId());
+    } catch {
+      this.errorMessage.set('Could not ban that member. Try again.');
+    }
+  }
+
+  onOpenRemovalForm(member: MemberSummary): void {
+    this.removalTargetId.set(member.id);
+    this.removalReason = '';
+  }
+
+  onCancelRemovalForm(): void {
+    this.removalTargetId.set(null);
+    this.removalReason = '';
+  }
+
+  // R4 — this only files the escalation; the Super Admin queue
+  // (AdminQueueComponent) is what actually approves/denies it.
+  async onSubmitRemoval(): Promise<void> {
+    const targetId = this.removalTargetId();
+    if (!targetId || !this.removalReason.trim()) return;
+    try {
+      await this.groupService.requestAccountDeletion(this.groupId(), targetId, this.removalReason);
+      this.removalRequestSent.set(true);
+      this.removalTargetId.set(null);
+      this.removalReason = '';
+    } catch {
+      this.errorMessage.set('Could not send the removal request. Try again.');
     }
   }
 }

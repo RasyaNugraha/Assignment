@@ -15,6 +15,11 @@
   font-size: 13px;
   color: var(--color-muted);
 }
+.admin-queue__section-title {
+  margin: 24px 0 12px;
+  font-size: 16px;
+  color: var(--color-navy);
+}
 .admin-queue__error {
   color: var(--color-coral);
   font-size: 13px;

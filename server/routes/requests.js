@@ -15,17 +15,27 @@ function canResolve(request, currentUser) {
     const group = db.findById('groups', request.groupId);
     return group ? group.adminIds.includes(currentUser.id) : false;
   }
+  // R4 — account deletion always escalates all the way to the Super Admin,
+  // never resolved by the Group Admin who filed it (see
+  // POST /groups/:groupId/members/:userId/deletion-requests in groups.js):
+  // a Group Admin can ban from their own Group unilaterally (R8), but
+  // can't unilaterally remove someone from the whole system.
+  if (request.type === 'account_deletion') {
+    return currentUser.isSuperAdmin;
+  }
   return false;
 }
 
-// Adds display-friendly requester/group names for the queue UI.
+// Adds display-friendly requester/group/target names for the queue UI.
 function toPublicRequest(request) {
   const requester = db.findById('users', request.requesterId);
   const group = request.groupId ? db.findById('groups', request.groupId) : null;
+  const target = request.targetUserId ? db.findById('users', request.targetUserId) : null;
   return {
     ...request,
     requesterDisplayName: requester ? requester.displayName : 'Unknown user',
     groupTitle: group ? group.title : null,
+    ...(request.targetUserId ? { targetDisplayName: target ? target.displayName : 'A former user' } : {}),
   };
 }
 
@@ -56,6 +66,7 @@ router.post('/requests/:id/approve', requireAuth, (req, res) => {
       backgroundColor: null,
       adminIds: [requester.id],
       memberIds: [requester.id],
+      bannedIds: [], // R8 — members banned from this specific Group
       createdAt: new Date().toISOString(),
     };
     db.insert('groups', group);
@@ -97,6 +108,33 @@ router.post('/requests/:id/approve', requireAuth, (req, res) => {
       actorId: req.currentUser.id,
       targetId: room.id,
       details: `${req.currentUser.displayName} approved room "#${room.name}" in "${group ? group.title : 'a group'}".`,
+    });
+  } else if (request.type === 'account_deletion') {
+    // R4 — the Super Admin approving this is what actually removes the
+    // account from the whole system, not just the one Group that reported
+    // them: strip them out of every Group's memberIds/adminIds/bannedIds
+    // (so no stale IDs point at a user that no longer exists), then delete
+    // the user record itself.
+    const target = db.findById('users', request.targetUserId);
+    if (target) {
+      db.getAll('groups').forEach((g) => {
+        const inGroup =
+          g.memberIds.includes(target.id) || g.adminIds.includes(target.id) || (g.bannedIds || []).includes(target.id);
+        if (inGroup) {
+          db.update('groups', g.id, {
+            memberIds: g.memberIds.filter((id) => id !== target.id),
+            adminIds: g.adminIds.filter((id) => id !== target.id),
+            bannedIds: (g.bannedIds || []).filter((id) => id !== target.id),
+          });
+        }
+      });
+      db.remove('users', target.id);
+    }
+    db.logAdminAction({
+      action: 'user_deleted',
+      actorId: req.currentUser.id,
+      targetId: request.targetUserId,
+      details: `${req.currentUser.displayName} permanently deleted ${target ? target.displayName : 'a user'} from the system (escalated by a Group Admin).`,
     });
   }
 

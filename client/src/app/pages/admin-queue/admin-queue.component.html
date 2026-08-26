@@ -1,6 +1,9 @@
 <div class="admin-queue">
   <h1 class="admin-queue__title">Admin Queue</h1>
-  <p class="admin-queue__subtitle">Pending Group creation requests — approving one appoints the requester as that Group's Group Admin.</p>
+  <p class="admin-queue__subtitle">
+    Group creation requests — approving one appoints the requester as that Group's Group Admin. Account deletion
+    requests are escalated by a Group Admin (R4) — approving one permanently removes that user from the system.
+  </p>
 
   @if (errorMessage()) {
     <p class="admin-queue__error">{{ errorMessage() }}</p>
@@ -24,6 +27,27 @@
         </li>
       } @empty {
         <li class="request-list__empty">No pending group creation requests.</li>
+      }
+    </ul>
+
+    <h2 class="admin-queue__section-title">Account Deletion Requests</h2>
+    <ul class="request-list">
+      @for (req of accountDeletionRequests(); track req.id) {
+        <li class="request-list__item">
+          <div class="request-list__info">
+            <strong>{{ req.targetDisplayName }}</strong>
+            <span class="request-list__meta">
+              reported by {{ req.requesterDisplayName }} from "{{ req.groupTitle }}"
+            </span>
+            <p class="request-list__desc">{{ req.reason }}</p>
+          </div>
+          <span class="request-list__actions">
+            <button class="btn btn--blue btn--sm" type="button" (click)="onApprove(req)">Approve (delete)</button>
+            <button class="btn btn--outline btn--sm" type="button" (click)="onDeny(req)">Deny</button>
+          </span>
+        </li>
+      } @empty {
+        <li class="request-list__empty">No pending account deletion requests.</li>
       }
     </ul>
   }

@@ -61,4 +61,24 @@ export class GroupService {
   leave(groupId: string): Promise<Group> {
     return this.toPromise(this.http.post<Group>(`/api/groups/${groupId}/leave`, {}));
   }
+
+  // R9 — Group Admin appoints another member as co-admin.
+  appointAdmin(groupId: string, userId: string): Promise<GroupDetail> {
+    return this.toPromise(this.http.post<GroupDetail>(`/api/groups/${groupId}/admins`, { userId }));
+  }
+
+  // R8 — Group Admin bans a member from this Group only (immediate, no
+  // Super Admin approval needed — see server/routes/groups.js for why this
+  // is direct while account deletion below isn't).
+  banMember(groupId: string, userId: string): Promise<GroupDetail> {
+    return this.toPromise(this.http.post<GroupDetail>(`/api/groups/${groupId}/ban`, { userId }));
+  }
+
+  // R4 — Group Admin escalates a member for full account deletion; only
+  // files the request, the Super Admin queue (AdminQueueComponent) resolves it.
+  requestAccountDeletion(groupId: string, userId: string, reason: string): Promise<GroupRequest> {
+    return this.toPromise(
+      this.http.post<GroupRequest>(`/api/groups/${groupId}/members/${userId}/deletion-requests`, { reason }),
+    );
+  }
 }

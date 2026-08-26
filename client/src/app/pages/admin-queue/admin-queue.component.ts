@@ -4,7 +4,9 @@ import { CommonModule } from '@angular/common';
 import { GroupRequest } from '../../core/models';
 import { RequestService } from '../../core/request.service';
 
-// Renders + approves/denies pending group_creation requests (Super Admin).
+// Renders + approves/denies the two request types only the Super Admin can
+// resolve: group_creation, and account_deletion (R4 — escalated by a Group
+// Admin, see GroupViewComponent's "Request Removal" action).
 @Component({
   selector: 'app-admin-queue',
   standalone: true,
@@ -17,6 +19,9 @@ export class AdminQueueComponent implements OnInit {
 
   private allPending = signal<GroupRequest[]>([]);
   groupCreationRequests = computed(() => this.allPending().filter((r) => r.type === 'group_creation'));
+  // R4 — account deletion is the other request type that only the Super
+  // Admin can ever resolve (see canResolve() in server/routes/requests.js).
+  accountDeletionRequests = computed(() => this.allPending().filter((r) => r.type === 'account_deletion'));
 
   loading = signal(true);
   errorMessage = signal('');
