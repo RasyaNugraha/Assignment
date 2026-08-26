@@ -1,8 +1,4 @@
-// DbService — small abstraction around the Phase 1 JSON-file data store.
-// Route handlers never touch the filesystem directly; they go through this
-// module. This is the swap point for Phase 2, when it gets replaced by
-// Mongoose models without route/controller code needing to change.
-// See Phase1.md section 4.7 for the db.json shape.
+// Small abstraction around the JSON-file data store.
 
 const fs = require('fs');
 const path = require('path');
@@ -30,8 +26,6 @@ function readDb() {
 function writeDb(data) {
   fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 }
-
-// Generic collection helpers -------------------------------------------------
 
 function getAll(collection) {
   const db = readDb();
@@ -75,7 +69,7 @@ function remove(collection, id) {
   return db[collection].length < before;
 }
 
-// Admin log convenience helper (R31 — every administrative action is logged)
+// R31: every administrative action is logged
 function logAdminAction({ action, actorId, targetId = null, details }) {
   const { randomUUID } = require('crypto');
   return insert('adminLogs', {

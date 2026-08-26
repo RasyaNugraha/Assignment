@@ -7,8 +7,7 @@ import { AuthService } from '../../core/auth.service';
 
 const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // R23
 
-// Bootstrap creates the very first user (Super Admin) — only reachable while
-// the system has zero users (R1/R2). See auth.js `/api/bootstrap`.
+// Creates the first user (Super Admin) while the system has zero users (R1/R2).
 @Component({
   selector: 'app-bootstrap',
   standalone: true,
@@ -31,7 +30,6 @@ export class BootstrapComponent implements OnInit {
   errorMessage = signal<string | null>(null);
 
   async ngOnInit() {
-    // If bootstrap has already happened, this screen shouldn't be reachable.
     const needsBootstrap = await this.auth.needsBootstrap().catch(() => true);
     if (!needsBootstrap) this.router.navigateByUrl('/login');
   }
@@ -57,8 +55,6 @@ export class BootstrapComponent implements OnInit {
         lastName: this.lastName,
         dateOfBirth: this.dateOfBirth,
       });
-      // Super Admin doesn't chat (R5) but /groups is still the shared shell;
-      // the navbar shows admin-only links once those screens exist (Week 6).
       this.router.navigateByUrl('/groups');
     } catch (err: any) {
       const apiErrors = err?.error?.errors as string[] | undefined;

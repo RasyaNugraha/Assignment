@@ -8,12 +8,17 @@ for 3813ICT Full Stack Development.
 
 ## Status
 
-Phase 1 in progress — planning, design, and admin/user-management prototype (no live chat yet).
+Phase 1 in progress — user/group/room management, admin flows, and profile self-service (no live chat yet).
 
 ## Docs
 
 - [Requirements Specification](docs/REQUIREMENTS.md)
 - [Screen Planning / Wireframe Notes](docs/WIREFRAME.md)
+- [Code Walkthrough (talking points)](docs/CODE_WALKTHROUGH.md)
+- [Git Repository & Version Control Approach](docs/GIT_WORKFLOW.md)
+- [Data Structures](docs/DATA_STRUCTURES.md)
+- [REST API Reference](docs/REST_API.md)
+- [Angular Architecture](docs/ANGULAR_ARCHITECTURE.md)
 
 ## Phases
 

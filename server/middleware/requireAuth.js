@@ -1,5 +1,4 @@
-// Shared guard for routes that require a logged-in user. Attaches the full
-// user record as req.currentUser so handlers don't each have to look it up.
+// Guards routes requiring login; attaches user as req.currentUser.
 const db = require('../services/dbService');
 
 function requireAuth(req, res, next) {

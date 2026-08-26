@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 
 import { authGuard, superAdminGuard } from './core/auth.guard';
+import { roomAgeGuard } from './core/room.guard';
 
 // Phase1.md section 5.4 routing table.
 export const routes: Routes = [
@@ -14,7 +15,11 @@ export const routes: Routes = [
     children: [
       { path: 'groups', loadComponent: () => import('./pages/group-list/group-list.component').then((m) => m.GroupListComponent) },
       { path: 'groups/:groupId', loadComponent: () => import('./pages/group-view/group-view.component').then((m) => m.GroupViewComponent) },
-      { path: 'groups/:groupId/rooms/:roomId', loadComponent: () => import('./pages/room/room.component').then((m) => m.RoomComponent) },
+      {
+        path: 'groups/:groupId/rooms/:roomId',
+        canActivate: [roomAgeGuard],
+        loadComponent: () => import('./pages/room/room.component').then((m) => m.RoomComponent),
+      },
       { path: 'profile', loadComponent: () => import('./pages/profile/profile.component').then((m) => m.ProfileComponent) },
       {
         path: 'admin/queue',

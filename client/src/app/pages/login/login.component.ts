@@ -22,8 +22,7 @@ export class LoginComponent implements OnInit {
   errorMessage = signal<string | null>(null);
 
   async ngOnInit() {
-    // If nobody has bootstrapped the system yet, send everyone to /bootstrap
-    // instead of /login (R2).
+    // Redirect to /bootstrap if the system has no users yet (R2).
     const needsBootstrap = await this.auth.needsBootstrap().catch(() => false);
     if (needsBootstrap) this.router.navigateByUrl('/bootstrap');
   }

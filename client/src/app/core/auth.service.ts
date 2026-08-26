@@ -2,18 +2,15 @@ import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-// Mirrors what the server sends back (toPublicUser in auth.js) — no passwordHash.
-// dateOfBirth is the stored source of truth (per client clarification: ask for
-// birthday, not a raw age, since age alone goes stale); age is computed
-// server-side from it and included for convenient display/age-gating.
+// Mirrors toPublicUser() in server/routes/auth.js — no passwordHash.
 export interface User {
   id: string;
   email: string;
   firstName: string;
   lastName: string;
   displayName: string;
-  dateOfBirth: string; // ISO date (yyyy-MM-dd)
-  age: number; // computed from dateOfBirth
+  dateOfBirth: string; // ISO date
+  age: number; // computed server-side from dateOfBirth
   isSuperAdmin: boolean;
   groupAdminOf: string[];
   groupMemberships: string[];
@@ -26,28 +23,29 @@ export interface RegistrationFields {
   password: string;
   firstName: string;
   lastName: string;
-  dateOfBirth: string; // ISO date (yyyy-MM-dd), from an <input type="date">
+  dateOfBirth: string; // ISO date, from <input type="date">
 }
+
+const STORAGE_KEY = 'fabulari_currentUser';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  // inject() instead of a constructor param — per Week 4 lecture, Angular's
-  // moved away from constructor injection to this function-based form.
   private http = inject(HttpClient);
 
-  // Whoever's logged in right now, shared across every component that injects this service.
+  // Starts null; authGuard re-validates against the server session on load.
   currentUser = signal<User | null>(null);
 
-  // Every HttpClient call (get/post/...) returns an Observable, not a value
-  // straight away — same "subscribe to a newsletter" idea from the Week 4
-  // lecture: you don't get the response the instant you call the method, you
-  // subscribe and get notified when it arrives. This helper does exactly
-  // that .subscribe() call, then resolves/rejects a Promise from it, so the
-  // rest of this service (and every component using it) can just
-  // `await this.auth.login(...)` instead of nesting a .subscribe() callback
-  // inside every method. The underlying mechanism is identical to what was
-  // demoed in class — this just avoids repeating the same subscribe
-  // boilerplate five times below.
+  private setUser(user: User): void {
+    this.currentUser.set(user);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+  }
+
+  private clearUser(): void {
+    this.currentUser.set(null);
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
+  // Wraps HttpClient's Observable in a Promise so components can await it.
   private toPromise<T>(request$: Observable<T>): Promise<T> {
     return new Promise((resolve, reject) => {
       request$.subscribe({
@@ -65,36 +63,41 @@ export class AuthService {
 
   bootstrap(fields: RegistrationFields): Promise<User> {
     return this.toPromise(this.http.post<User>('/api/bootstrap', fields)).then((user) => {
-      this.currentUser.set(user);
+      this.setUser(user);
       return user;
     });
   }
 
   register(fields: RegistrationFields): Promise<User> {
     return this.toPromise(this.http.post<User>('/api/auth/register', fields)).then((user) => {
-      this.currentUser.set(user);
+      this.setUser(user);
       return user;
     });
   }
 
   login(email: string, password: string): Promise<User> {
     return this.toPromise(this.http.post<User>('/api/auth/login', { email, password })).then((user) => {
-      this.currentUser.set(user);
+      this.setUser(user);
       return user;
     });
   }
 
   async logout(): Promise<void> {
     await this.toPromise(this.http.post('/api/auth/logout', {}));
-    this.currentUser.set(null);
+    this.clearUser();
   }
 
-  // Checks the current session on the server and syncs currentUser — used on
-  // app load / refresh so a logged-in user doesn't get bounced to /login.
+  // Re-syncs currentUser from the server session — used on app load/refresh.
   me(): Promise<User> {
-    return this.toPromise(this.http.get<User>('/api/auth/me')).then((user) => {
-      this.currentUser.set(user);
-      return user;
-    });
+    return this.toPromise(this.http.get<User>('/api/auth/me')).then(
+      (user) => {
+        this.setUser(user);
+        return user;
+      },
+      (err) => {
+        this.clearUser(); // stale/expired session — don't leave old data behind
+        throw err;
+      },
+    );
   }
 }

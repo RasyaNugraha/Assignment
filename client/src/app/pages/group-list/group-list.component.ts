@@ -6,9 +6,7 @@ import { RouterLink } from '@angular/router';
 import { Group } from '../../core/models';
 import { GroupService } from '../../core/group.service';
 
-// WIREFRAME.md §4 "Main / Group List Screen". GET /api/groups is live as of
-// Week 5 — allGroups() holds the real list, myGroups() is derived from it
-// via the isMember flag the server attaches per-viewer.
+// myGroups() derives from allGroups() via the server-attached isMember flag.
 @Component({
   selector: 'app-group-list',
   standalone: true,
@@ -72,7 +70,6 @@ export class GroupListComponent implements OnInit {
   async onJoinGroup(group: Group): Promise<void> {
     try {
       await this.groupService.requestToJoin(group.id);
-      // Reflect the pending state immediately without a full reload.
       this.allGroups.update((groups) =>
         groups.map((g) => (g.id === group.id ? { ...g, hasPendingJoinRequest: true } : g)),
       );

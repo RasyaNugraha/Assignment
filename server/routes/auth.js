@@ -1,11 +1,4 @@
-// Bootstrap & Auth routes — Phase1.md section 6.1
-// R1/R2: exactly one Super Admin, created once via bootstrap, only while the
-// system has zero users.
-// R20-R25: simple email/password auth, bcrypt-hashed, session-based (no JWT).
-//
-// Age is stored as dateOfBirth (per client clarification in the Week 3
-// follow-up Q&A: ask for a birthday, not a raw age number, since a raw
-// number goes stale — always derive age from the stored date instead).
+// Bootstrap & auth routes (R1/R2, R20-R25). Age derives from dateOfBirth.
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
@@ -14,7 +7,7 @@ const db = require('../services/dbService');
 
 const router = express.Router();
 
-const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // min 8 chars, at least 1 uppercase (R23)
+const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // R23: min 8 chars + 1 uppercase
 
 function computeAge(dateOfBirth) {
   const dob = new Date(dateOfBirth);
@@ -58,8 +51,7 @@ router.get('/bootstrap/status', (req, res) => {
   res.json({ needsBootstrap: userCount === 0 });
 });
 
-// POST /api/bootstrap — create the first user as Super Admin. Rejected once
-// any user exists (R1, R2).
+// POST /api/bootstrap — create the first user as Super Admin (R1, R2)
 router.post('/bootstrap', async (req, res) => {
   const existingUsers = db.getAll('users');
   if (existingUsers.length > 0) {
@@ -98,8 +90,7 @@ router.post('/bootstrap', async (req, res) => {
   res.status(201).json(toPublicUser(user));
 });
 
-// POST /api/auth/register — register a new General User (R25). Blocked until
-// bootstrap has happened, since /register should never run before /bootstrap.
+// POST /api/auth/register — register a new General User (R25)
 router.post('/auth/register', async (req, res) => {
   if (db.getAll('users').length === 0) {
     return res.status(409).json({ error: 'System has not been bootstrapped yet.' });

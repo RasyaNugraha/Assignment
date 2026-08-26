@@ -4,10 +4,7 @@ import { CommonModule } from '@angular/common';
 import { GroupRequest } from '../../core/models';
 import { RequestService } from '../../core/request.service';
 
-// Phase1.md §5.1 "SuperAdminQueueComponent". GET /api/requests is already
-// scoped server-side to what the current user may resolve (routes/requests.js
-// canResolve()) — for the Super Admin that's exactly the pending
-// group_creation requests, so this component just needs to render + approve/deny.
+// Renders + approves/denies pending group_creation requests (Super Admin).
 @Component({
   selector: 'app-admin-queue',
   standalone: true,

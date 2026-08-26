@@ -11,7 +11,7 @@ const adminLogRoutes = require('./routes/adminLogs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '3mb' })); // room for base64 avatar uploads (R9 profile pic)
 app.use(
   session({
     secret: 'fabulari-dev-secret', // fine for local dev; would move to env var before any real deployment

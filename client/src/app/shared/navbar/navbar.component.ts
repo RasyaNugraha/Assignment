@@ -4,8 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 
 import { AuthService } from '../../core/auth.service';
 
-// Shown once logged in, hidden on /bootstrap, /login, /register
-// (Phase1.md §5.1 component tree).
+// Shown once logged in; hidden on /bootstrap, /login, /register.
 @Component({
   selector: 'app-navbar',
   standalone: true,

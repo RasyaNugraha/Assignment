@@ -3,8 +3,7 @@ import { RouterOutlet } from '@angular/router';
 
 import { NavbarComponent } from '../../shared/navbar/navbar.component';
 
-// Parent shell for every authenticated route (Phase1.md §5.1): navbar +
-// router-outlet. Guarded by authGuard on the route definition, not here.
+// Parent shell for authenticated routes: navbar + router-outlet.
 @Component({
   selector: 'app-main-layout',
   standalone: true,

@@ -3,6 +3,10 @@
     <p class="main-panel__error">{{ errorMessage() }}</p>
   }
 
+  @if (ageBlockedMinAge() !== null) {
+    <p class="main-panel__error">You must be at least {{ ageBlockedMinAge() }} to enter that room.</p>
+  }
+
   @if (loading()) {
     <p class="main-panel__loading">Loading group…</p>
   } @else {

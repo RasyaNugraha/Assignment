@@ -1,9 +1,4 @@
-// Shared frontend contracts mirroring the backend entities in Phase1.md
-// section 4 (§5.3: "one shared contract, no duplicate frontend-only shapes").
-// GET /api/groups is live as of Week 5 (server/routes/groups.js); room
-// requests + the request queue (approve/deny) are wired up as of Week 5
-// too — RoomComponent (the actual chat view) still renders a placeholder,
-// since live chat is Phase 2.
+// Shared frontend contracts mirroring the backend entities.
 
 export interface Group {
   id: string;
@@ -14,9 +9,7 @@ export interface Group {
   adminIds: string[];
   memberIds: string[];
   createdAt: string;
-  // Viewer-relative flags — computed server-side per request in
-  // server/routes/groups.js's toPublicGroup(), so the client never has to
-  // cross-reference groups against a separate membership list itself.
+  // Viewer-relative flags, computed server-side per request.
   isMember?: boolean;
   isAdmin?: boolean;
   hasPendingJoinRequest?: boolean;
@@ -24,6 +17,14 @@ export interface Group {
 
 export interface GroupDetail extends Group {
   rooms: Room[];
+  // Attached by the server only when the viewer isAdmin (R9).
+  members?: MemberSummary[];
+}
+
+export interface MemberSummary {
+  id: string;
+  displayName: string;
+  isAdmin: boolean;
 }
 
 export type RequestType = 'group_creation' | 'group_join' | 'room_creation';
@@ -42,9 +43,7 @@ export interface GroupRequest {
   // room_creation only:
   name?: string;
   minAge?: number;
-  // Display-friendly fields the server attaches (routes/requests.js
-  // toPublicRequest()) so the queue UI doesn't have to look users/groups up
-  // itself.
+  // Display-friendly fields the server attaches for the queue UI.
   requesterDisplayName?: string;
   groupTitle?: string | null;
 }

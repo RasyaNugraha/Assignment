@@ -9,8 +9,7 @@ export interface ChangePasswordFields {
   confirmNewPassword: string;
 }
 
-// Self-service profile edits (Phase1.md §6.2) — display name, password,
-// personal UI preferences. Same toPromise() pattern as the other services.
+// Self-service profile edits: display name, password, UI preferences, avatar.
 @Injectable({ providedIn: 'root' })
 export class UserService {
   private http = inject(HttpClient);
@@ -34,5 +33,10 @@ export class UserService {
 
   updatePreferences(preferences: { theme: 'light' | 'dark'; fontSize: 'small' | 'medium' | 'large' }): Promise<User> {
     return this.toPromise(this.http.put<User>('/api/users/me/preferences', preferences));
+  }
+
+  // avatarUrl is a base64 data: URL read client-side via FileReader.
+  updateAvatar(avatarUrl: string): Promise<User> {
+    return this.toPromise(this.http.put<User>('/api/users/me/avatar', { avatarUrl }));
   }
 }

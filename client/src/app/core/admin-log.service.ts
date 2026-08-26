@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-// Mirrors server/services/dbService.js's AdminLogEntry shape (Phase1.md §4.6).
+// Mirrors server's AdminLogEntry shape.
 export interface AdminLogEntry {
   id: string;
   action: string;

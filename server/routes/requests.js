@@ -1,7 +1,4 @@
-// Request queue — Phase1.md §6, REQUIREMENTS.md §5.
-// General Users can only *request* things; who can approve depends on the
-// request type: Super Admin approves group-creation requests, a Group's own
-// Group Admin(s) approve join and room-creation requests for that Group.
+// Request queue: approver depends on request type (Super Admin or Group Admin).
 
 const express = require('express');
 const { randomUUID } = require('crypto');
@@ -21,8 +18,7 @@ function canResolve(request, currentUser) {
   return false;
 }
 
-// Adds display-friendly fields so the client doesn't have to cross-reference
-// users/groups itself just to render "who" and "which group" in the queue UI.
+// Adds display-friendly requester/group names for the queue UI.
 function toPublicRequest(request) {
   const requester = db.findById('users', request.requesterId);
   const group = request.groupId ? db.findById('groups', request.groupId) : null;

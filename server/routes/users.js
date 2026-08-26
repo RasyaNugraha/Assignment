@@ -1,6 +1,4 @@
-// User self-service routes — Phase1.md §6.2, REQUIREMENTS.md §5.
-// Everything here operates on req.currentUser (the logged-in user) — nobody
-// can edit another user's profile through these routes.
+// User self-service routes; all operate on req.currentUser only.
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
@@ -9,7 +7,9 @@ const requireAuth = require('../middleware/requireAuth');
 
 const router = express.Router();
 
-const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // min 8 chars, at least 1 uppercase (R23)
+const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // R23
+const AVATAR_DATA_URL_RULE = /^data:image\/(png|jpeg|jpg|gif|webp);base64,/;
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024; // ~2MB decoded
 
 function computeAge(dateOfBirth) {
   const dob = new Date(dateOfBirth);
@@ -67,6 +67,23 @@ router.put('/users/me/preferences', requireAuth, (req, res) => {
   if (fontSize === 'small' || fontSize === 'medium' || fontSize === 'large') preferences.fontSize = fontSize;
 
   const updated = db.update('users', req.currentUser.id, { preferences });
+  res.json(toPublicUser(updated));
+});
+
+// PUT /api/users/me/avatar — avatar as a base64 data URL (no MongoDB/GridFS yet
+// in Phase 1, so it's stored inline on the user record like everything else).
+router.put('/users/me/avatar', requireAuth, (req, res) => {
+  const { avatarUrl } = req.body || {};
+  if (!avatarUrl || typeof avatarUrl !== 'string' || !AVATAR_DATA_URL_RULE.test(avatarUrl)) {
+    return res.status(400).json({ error: 'Avatar must be a PNG, JPEG, GIF, or WebP image.' });
+  }
+  const base64Length = avatarUrl.length - avatarUrl.indexOf(',') - 1;
+  const approxBytes = base64Length * 0.75;
+  if (approxBytes > AVATAR_MAX_BYTES) {
+    return res.status(400).json({ error: 'Avatar image must be 2MB or smaller.' });
+  }
+
+  const updated = db.update('users', req.currentUser.id, { avatarUrl });
   res.json(toPublicUser(updated));
 });
 

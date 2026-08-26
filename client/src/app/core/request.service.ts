@@ -3,11 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { GroupRequest } from './models';
 
-// Backs both the Super Admin queue (group_creation requests) and a Group
-// Admin's own pending-requests view (group_join, room_creation for their
-// group) — GET /api/requests is already scoped server-side to whatever the
-// current user is allowed to resolve (routes/requests.js canResolve()), so
-// this service doesn't need to know the difference itself.
+// Backs both the Super Admin queue and a Group Admin's pending-requests view.
 @Injectable({ providedIn: 'root' })
 export class RequestService {
   private http = inject(HttpClient);

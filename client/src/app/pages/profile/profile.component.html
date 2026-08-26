@@ -7,8 +7,12 @@
         <span>{{ (auth.currentUser()?.displayName ?? '?').charAt(0) }}</span>
       }
     </div>
-    <input class="avatar-upload" type="file" accept="image/png,image/jpeg,image/gif" disabled />
-    <p class="avatar-hint">Avatar upload isn't wired up yet — needs file-upload handling on the server.</p>
+    <input class="avatar-upload" type="file" accept="image/png,image/jpeg,image/gif,image/webp" (change)="onAvatarSelected($event)" />
+    @if (avatarMessage()) {
+      <p class="hint">{{ avatarMessage() }}</p>
+    } @else {
+      <p class="avatar-hint">PNG, JPEG, GIF, or WebP — up to 2MB.</p>
+    }
   </section>
 
   <section class="profile__details-panel">

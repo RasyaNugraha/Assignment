@@ -54,6 +54,14 @@ export class GroupViewComponent implements OnInit, OnDestroy {
   loading = signal(true);
   errorMessage = signal('');
 
+  // R18 — set when we've been redirected here after roomAgeGuard (or the
+  // server's own re-check in RoomComponent) blocked entry to a Room, via the
+  // ?ageBlocked=<minAge> query param both checks use. Read once on load
+  // rather than kept subscribed: it only matters for the redirect that just
+  // happened, not for any later navigation within this same component
+  // instance (e.g. switching Groups without a full reload).
+  ageBlockedMinAge = signal<number | null>(null);
+
   showRequestRoomForm = signal(false);
   newRoomName = '';
   newRoomMinAge = 0;
@@ -73,6 +81,9 @@ export class GroupViewComponent implements OnInit, OnDestroy {
   );
 
   ngOnInit() {
+    const ageBlocked = this.route.snapshot.queryParamMap.get('ageBlocked');
+    if (ageBlocked !== null) this.ageBlockedMinAge.set(Number(ageBlocked));
+
     this.paramSub = this.route.paramMap.subscribe((params) => {
       const id = params.get('groupId') ?? '';
       this.groupId.set(id);

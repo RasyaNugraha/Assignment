@@ -37,6 +37,22 @@ function currentUserOrNull(req) {
   return req.session.userId ? db.findById('users', req.session.userId) : null;
 }
 
+// Same derivation as auth.js's computeAge() — duplicated locally rather than
+// imported since neither route file currently shares helpers via a common
+// module (each defines its own toPublicX()-style functions). Needed here so
+// the Room age check below (R18) works off a live age, not a stored one that
+// could go stale.
+function computeAge(dateOfBirth) {
+  const dob = new Date(dateOfBirth);
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const hasHadBirthdayThisYear =
+    today.getMonth() > dob.getMonth() ||
+    (today.getMonth() === dob.getMonth() && today.getDate() >= dob.getDate());
+  if (!hasHadBirthdayThisYear) age -= 1;
+  return age;
+}
+
 // GET /api/groups — every group is visible to everyone, logged in or not.
 router.get('/groups', (req, res) => {
   const currentUser = currentUserOrNull(req);
@@ -51,6 +67,32 @@ router.get('/groups/:id', (req, res) => {
   if (!group) return res.status(404).json({ error: 'Group not found.' });
   const rooms = db.findMany('rooms', (r) => r.groupId === group.id);
   res.json({ ...toPublicGroup(group, currentUser), rooms });
+});
+
+// GET /api/groups/:groupId/rooms/:roomId — R18: server-side re-validation of
+// a Room's age limit. roomAgeGuard (client/src/app/core/room.guard.ts) makes
+// the same check up front for a fast redirect, but a guard only runs inside
+// Angular's router — nothing stops a request straight to this URL (or a
+// tampered client bundle) from skipping it. This endpoint is the real
+// authority: RoomComponent calls it on entry and treats a 403 the same way
+// the guard does (redirect to the Group View with the same ?ageBlocked=
+// banner), so the check holds even if the client-side guard is bypassed.
+router.get('/groups/:groupId/rooms/:roomId', requireAuth, (req, res) => {
+  const group = db.findById('groups', req.params.groupId);
+  if (!group) return res.status(404).json({ error: 'Group not found.' });
+
+  const room = db.findOne('rooms', (r) => r.id === req.params.roomId && r.groupId === group.id);
+  if (!room) return res.status(404).json({ error: 'Room not found.' });
+
+  const age = computeAge(req.currentUser.dateOfBirth);
+  if (age < room.minAge) {
+    return res.status(403).json({
+      error: `You must be at least ${room.minAge} to enter this room.`,
+      minAge: room.minAge,
+    });
+  }
+
+  res.json(room);
 });
 
 // POST /api/groups/requests — a General User asks the Super Admin for a new

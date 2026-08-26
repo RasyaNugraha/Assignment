@@ -3,10 +3,7 @@ import { CanActivateFn, Router } from '@angular/router';
 
 import { AuthService } from './auth.service';
 
-// Protects everything under the main layout (Phase1.md §5.4). Re-checks the
-// session with the server on every navigation (not just the in-memory
-// signal) so a hard refresh doesn't wrongly bounce a logged-in user, and a
-// logged-out one can't reach a protected route by URL.
+// Protects routes under the main layout; re-checks session with server.
 export const authGuard: CanActivateFn = async () => {
   const auth = inject(AuthService);
   const router = inject(Router);
@@ -21,8 +18,7 @@ export const authGuard: CanActivateFn = async () => {
   }
 };
 
-// Restricts Super-Admin-only screens (queue, admin log — Phase1.md §5.4).
-// Assumes authGuard already ran and populated currentUser.
+// Restricts Super-Admin-only screens. Assumes authGuard already ran.
 export const superAdminGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   const router = inject(Router);

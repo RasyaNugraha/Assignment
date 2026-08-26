@@ -5,10 +5,9 @@ import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../core/auth.service';
 import { UserService } from '../../core/user.service';
 
-// WIREFRAME.md §7 "Profile Screen". Display name / password / preferences
-// all hit real PUT /api/users/me* endpoints now (server/routes/users.js).
-// Avatar upload still needs a real file input) — not covered yet, so it
-// stays a disabled placeholder per the template.
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024; // matches server's PUT /users/me/avatar limit
+
+// Display name / password / preferences / avatar edits.
 @Component({
   selector: 'app-profile',
   standalone: true,
@@ -31,6 +30,8 @@ export class ProfileComponent {
   theme = this.auth.currentUser()?.preferences.theme ?? 'light';
   fontSize = this.auth.currentUser()?.preferences.fontSize ?? 'medium';
   preferencesMessage = signal<string | null>(null);
+
+  avatarMessage = signal<string | null>(null);
 
   async onSaveDisplayName() {
     if (!this.displayName.trim()) return;
@@ -71,5 +72,39 @@ export class ProfileComponent {
     } catch {
       this.preferencesMessage.set('Could not save. Try again.');
     }
+  }
+
+  // Reads the picked file as a base64 data: URL (FileReader), then sends it
+  // straight to the server — no separate file-storage service in Phase 1.
+  async onAvatarSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    if (file.size > AVATAR_MAX_BYTES) {
+      this.avatarMessage.set('Image must be 2MB or smaller.');
+      input.value = '';
+      return;
+    }
+
+    try {
+      const dataUrl = await this.readFileAsDataUrl(file);
+      const updated = await this.userService.updateAvatar(dataUrl);
+      this.auth.currentUser.set(updated);
+      this.avatarMessage.set('Avatar updated.');
+    } catch (err: any) {
+      this.avatarMessage.set(err?.error?.error ?? 'Could not update avatar. Try again.');
+    } finally {
+      input.value = '';
+    }
+  }
+
+  private readFileAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
   }
 }

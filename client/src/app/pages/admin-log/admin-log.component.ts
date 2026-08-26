@@ -4,8 +4,7 @@ import { FormsModule } from '@angular/forms';
 
 import { AdminLogEntry, AdminLogService } from '../../core/admin-log.service';
 
-// Phase1.md §5.1 "AdminLogComponent" / §6.6. R31/R32 — every administrative
-// action is logged server-side; this just renders + filters that log.
+// R31/R32: renders and filters the server-side admin action log.
 @Component({
   selector: 'app-admin-log',
   standalone: true,

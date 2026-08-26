@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Group, GroupDetail, GroupRequest } from './models';
+import { Group, GroupDetail, GroupRequest, Room } from './models';
 
 export interface RequestGroupFields {
   title: string;
@@ -36,6 +36,14 @@ export class GroupService {
 
   getById(id: string): Promise<GroupDetail> {
     return this.toPromise(this.http.get<GroupDetail>(`/api/groups/${id}`));
+  }
+
+  // R18 — server-side re-validation of a Room's age limit, called by
+  // RoomComponent on entry. roomAgeGuard already checked this client-side,
+  // but this hits the real authority (server/routes/groups.js), which
+  // rejects with 403 if the current user is under the Room's minAge.
+  getRoom(groupId: string, roomId: string): Promise<Room> {
+    return this.toPromise(this.http.get<Room>(`/api/groups/${groupId}/rooms/${roomId}`));
   }
 
   requestNewGroup(fields: RequestGroupFields): Promise<GroupRequest> {
