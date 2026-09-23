@@ -1,39 +1,67 @@
-const express = require('express');
-const path = require('path');
-const session = require('express-session');
+// Server entry point: connect to MongoDB, set up Express + Socket.IO, then listen.
 
-const authRoutes = require('./routes/auth');
-const groupRoutes = require('./routes/groups');
-const requestRoutes = require('./routes/requests');
-const userRoutes = require('./routes/users');
-const adminLogRoutes = require('./routes/adminLogs');
+const http = require('http');
+const { Server } = require('socket.io');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+const config = require('./config');
+const db = require('./services/dbService');
+const { createApp, createSessionMiddleware } = require('./app');
+const { registerChatHandlers } = require('./sockets/chat');
+const { MongoStore } = require('connect-mongo');
 
-app.use(express.json({ limit: '3mb' })); // room for base64 avatar uploads (R9 profile pic)
-app.use(
-  session({
-    secret: 'fabulari-dev-secret', // fine for local dev; would move to env var before any real deployment
-    resave: false,
-    saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 60 * 24 }, // 1 day
-  })
-);
-app.use(express.static(path.join(__dirname, 'public')));
+// Keep login sessions in MongoDB so a server restart doesn't log everyone out.
+function createSessionStore() {
+  const client = db.getClient();
+  if (!client) return undefined; // not connected (tests) = default memory store
+  return MongoStore.create({ client, dbName: db.getDb().databaseName, collectionName: 'sessions' });
+}
 
-app.get('/api/status', (req, res) => {
-  res.json({ ok: true, app: 'fabulari-server', phase: 1 });
-});
+// Puts Express and Socket.IO on one HTTP server (tests reuse this).
+function createServer() {
+  // Same session for Express and Socket.IO, so sockets know who's logged in.
+  const sessionMiddleware = createSessionMiddleware(createSessionStore());
+  const app = createApp({ sessionMiddleware });
+  const server = http.createServer(app);
 
-app.use('/api', authRoutes);
-app.use('/api', groupRoutes);
-app.use('/api', requestRoutes);
-app.use('/api', userRoutes);
-app.use('/api', adminLogRoutes);
+  const io = new Server(server, {
+    // Bigger limit so 2MB images (base64) can be sent.
+    maxHttpBufferSize: 4e6,
+    cors: { origin: config.clientOrigin, credentials: true },
+  });
+  io.engine.use(sessionMiddleware);
+  registerChatHandlers(io, { messageSecret: config.messageSecret });
+  app.set('io', io); // lets REST routes notify sockets (e.g. room removed)
 
-// Other route groups (rooms, messages) land here once Phase 2 needs them.
+  return { app, server, io };
+}
 
-app.listen(PORT, () => {
-  console.log(`Fabulari server listening on http://localhost:${PORT}`);
-});
+// Connect to MongoDB and start the server.
+async function start() {
+  await db.connect(config.mongoUri, config.dbName);
+  console.log(`Connected to MongoDB: ${config.dbName}`);
+
+  const { server, io } = createServer();
+  server.listen(config.port, () => {
+    console.log(`Fabulari server listening on http://localhost:${config.port}`);
+  });
+
+  const shutdown = async () => {
+    io.close();
+    server.close();
+    await db.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+// Only start when run with `node server.js`, not when a test imports this file.
+if (require.main === module) {
+  start().catch((err) => {
+    console.error('Could not start the server — is MongoDB running (mongod)?');
+    console.error(err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { createServer };

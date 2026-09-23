@@ -1,26 +1,95 @@
 <div class="room">
   <header class="room__header">
-    <button class="back-btn" type="button" (click)="onLeave()">&larr;</button>
-    <h1 class="room__title">#{{ roomId() }}</h1>
-    <span class="room__meta">Placeholder — Phase 1</span>
+    <button class="back-btn" type="button" (click)="onLeave()" aria-label="Back to group">&larr;</button>
+    <h1 class="room__title">#{{ room()?.name ?? '…' }}</h1>
+    @if (room(); as r) {
+      <span class="room__meta">{{ r.minAge ? 'Age ' + r.minAge + '+' : 'All ages' }}</span>
+    }
   </header>
 
-  <div class="room__messages">
-    @for (message of messages(); track message.sentAt) {
-      <div class="message">
-        <span class="message__avatar">{{ message.senderName.charAt(0) }}</span>
-        <div class="message__body">
-          <span class="message__meta"><strong>{{ message.senderName }}</strong> {{ message.sentAt }}</span>
-          <p class="message__text">{{ message.text }}</p>
-        </div>
+  @if (onlineMembers().length) {
+    <p class="room__online" aria-live="polite">
+      <span class="room__online-dot" aria-hidden="true"></span>
+      Online ({{ onlineMembers().length }}):
+      @for (m of onlineMembers(); track m.id; let last = $last) {
+        <span>{{ m.id === auth.currentUser()?.id ? 'You' : m.displayName }}{{ last ? '' : ', ' }}</span>
+      }
+    </p>
+  }
+
+  <!-- Join / leave popups -->
+  <div class="toasts" aria-live="polite">
+    @for (toast of toasts(); track toast.id) {
+      <div class="toast" role="status" animate.enter="toast-in">
+        <span>{{ toast.text }}</span>
+        <button type="button" class="toast__close" (click)="dismissToast(toast.id)" aria-label="Dismiss">&times;</button>
       </div>
     }
-    <p class="room__notice">Real-time chat, image uploads, and message delete arrive in Phase 2 (Socket.IO).</p>
   </div>
 
-  <form class="room__composer">
-    <input class="room__input" type="text" placeholder="Type a message..." disabled />
-    <button class="room__send" type="button" disabled>Send</button>
+  <div class="room__messages" #messageList aria-live="polite" aria-label="Messages">
+    @if (loading()) {
+      <p class="room__notice">Joining room…</p>
+    } @else {
+      @for (message of messages(); track message.id) {
+        <article class="message" [class.message--mine]="isMine(message)" animate.enter="fade-in">
+          @if (avatarUrl(message); as src) {
+            <img class="message__avatar message__avatar--img" [src]="src" [alt]="message.senderDisplayName" />
+          } @else {
+            <span class="message__avatar" aria-hidden="true">{{ message.senderDisplayName.charAt(0) }}</span>
+          }
+          <div class="message__body">
+            <span class="message__meta">
+              <strong>{{ isMine(message) ? 'You' : message.senderDisplayName }}</strong>
+              <time [attr.datetime]="message.sentAt">{{ message.sentAt | date: 'd MMM, HH:mm' }}</time>
+            </span>
+            @if (message.text) {
+              <p class="message__text">{{ message.text }}</p>
+            }
+            @if (message.imageUrl) {
+              <img class="message__image" [src]="message.imageUrl" alt="Image sent by {{ message.senderDisplayName }}" />
+            }
+          </div>
+          @if (isMine(message)) {
+            <button class="message__delete" type="button" (click)="onDelete(message)" aria-label="Delete this message">
+              Delete
+            </button>
+          }
+        </article>
+      } @empty {
+        <p class="room__notice">No messages yet — say hello!</p>
+      }
+    }
+  </div>
+
+  @if (errorMessage()) {
+    <p class="room__error" role="alert">{{ errorMessage() }}</p>
+  }
+
+  @if (draftImage(); as preview) {
+    <div class="room__preview">
+      <img [src]="preview" alt="Image to send" />
+      <button class="btn btn--outline btn--sm" type="button" (click)="clearImage()">Remove image</button>
+    </div>
+  }
+
+  <form class="room__composer" (ngSubmit)="onSend()">
+    <label class="room__attach" title="Attach an image (PNG, GIF or JPEG, max 2MB)">
+      <span class="visually-hidden">Attach image</span>
+      <input type="file" accept="image/png,image/gif,image/jpeg" (change)="onImageSelected($event)" />
+      <span aria-hidden="true">&#128206;</span>
+    </label>
+    <textarea
+      class="room__input"
+      rows="1"
+      placeholder="Type a message…"
+      aria-label="Message"
+      [(ngModel)]="draftText"
+      name="draftText"
+      (keydown)="onComposerKeydown($event)"
+      [disabled]="loading()"
+    ></textarea>
+    <button class="room__send" type="submit" [disabled]="!canSend() || loading()">Send</button>
   </form>
 
   <button class="btn btn--outline" type="button" (click)="onLeave()">Leave Room</button>

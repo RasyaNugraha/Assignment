@@ -1,83 +1,219 @@
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 
-import { GroupService } from '../../core/group.service';
+import { AuthService } from '../../core/auth.service';
+import { ChatService } from '../../core/chat.service';
+import { ChatMessage, PresenceNotice, Room } from '../../core/models';
+import { readFileAsDataUrl, validateChatImage } from '../../core/image-file';
 
-// WIREFRAME.md §6 "Room Screen (placeholder for Phase 1)". No chat/socket
-// functionality required yet (REQUIREMENTS.md §12) — static mock messages
-// only, real-time messaging arrives in Phase 2 via Socket.IO.
-interface MockMessage {
-  senderName: string;
-  sentAt: string;
+// Popup message (join / leave).
+interface Toast {
+  id: number;
   text: string;
 }
 
-const MOCK_MESSAGES: MockMessage[] = [
-  { senderName: 'Allan Browning', sentAt: '12:04', text: 'Welcome to the room!' },
-  { senderName: 'Rasya', sentAt: '12:05', text: 'This is a placeholder — real chat lands in Phase 2.' },
-];
+const TOAST_MS = 4000;
 
 @Component({
   selector: 'app-room',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './room.component.html',
   styleUrl: './room.component.css',
 })
 export class RoomComponent implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
-  private groupService = inject(GroupService);
+  private chat = inject(ChatService);
+  public auth = inject(AuthService);
 
-  // Subscribed rather than snapshot-read (Week 4 lecture) — jumping straight
-  // from one Room to another reuses this component instance, so a
-  // snapshot-only read of the route params would never update after the
-  // first load.
+  @ViewChild('messageList') private messageList?: ElementRef<HTMLElement>;
+
   roomId = signal('');
   groupId = signal('');
-  private paramSub?: Subscription;
+  room = signal<Room | null>(null);
+  loading = signal(true);
+  errorMessage = signal('');
 
-  messages = signal(MOCK_MESSAGES);
+  // Messages shown in this visit (last 5 + new ones).
+  messages = signal<ChatMessage[]>([]);
+  toasts = signal<Toast[]>([]);
+  // Who is in the room right now.
+  onlineMembers = signal<{ id: string; displayName: string }[]>([]);
 
-  ngOnInit() {
-    this.paramSub = this.route.paramMap.subscribe((params) => {
-      const roomId = params.get('roomId') ?? '';
-      const groupId = params.get('groupId') ?? '';
-      this.roomId.set(roomId);
-      this.groupId.set(groupId);
-      if (roomId && groupId) this.checkRoomAccess(groupId, roomId);
-      // TODO: re-fetch this room's real last-5 messages from
-      // /api/rooms/:id/messages here once that endpoint exists (Phase 2).
-    });
+  draftText = '';
+  draftImage = signal<string | null>(null);
+  sending = signal(false);
+
+  // Can send if there's text or an image.
+  canSend(): boolean {
+    return !this.sending() && (this.draftImage() !== null || this.draftText.trim().length > 0);
   }
 
-  // R18 — roomAgeGuard already ran before this component was even created,
-  // but that's a client-side check only (room.guard.ts's own comment
-  // explains why it isn't the authority). This calls the same GET
-  // /api/groups/:groupId/rooms/:roomId endpoint the guard uses, which
-  // re-checks the Room's minAge server-side; a 403 here means either the
-  // guard was bypassed (direct navigation, tampered client state) or the
-  // user's age changed since the guard ran. Either way, bounce back to the
-  // Group View with the same ?ageBlocked= banner the guard shows, so the
-  // user sees one consistent message regardless of which check caught them.
-  private async checkRoomAccess(groupId: string, roomId: string): Promise<void> {
-    try {
-      await this.groupService.getRoom(groupId, roomId);
-    } catch (err: any) {
-      const minAge = err?.error?.minAge;
-      this.router.navigate(['/groups', groupId], {
-        queryParams: minAge !== undefined ? { ageBlocked: minAge } : {},
-      });
+  private subs: Subscription[] = [];
+  private nextToastId = 1;
+
+  // Join the room and listen for chat events.
+  ngOnInit() {
+    // Subscribe to params so switching rooms works.
+    this.subs.push(
+      this.route.paramMap.subscribe((params) => {
+        const groupId = params.get('groupId') ?? '';
+        const roomId = params.get('roomId') ?? '';
+        void this.switchRoom(groupId, roomId);
+      }),
+    );
+
+    // Listen for events from the server.
+    this.subs.push(
+      this.chat.messages$.subscribe((m) => {
+        if (m.roomId !== this.roomId()) return;
+        // Skip if we already have it.
+        if (this.messages().some((existing) => existing.id === m.id)) return;
+        this.messages.update((list) => [...list, m]);
+        this.scrollToBottom();
+      }),
+      this.chat.messageDeleted$.subscribe((e) => {
+        if (e.roomId !== this.roomId()) return;
+        this.messages.update((list) => list.filter((m) => m.id !== e.messageId));
+      }),
+      this.chat.roomMembers$.subscribe((e) => {
+        if (e.roomId === this.roomId()) this.onlineMembers.set(e.members);
+      }),
+      this.chat.userJoined$.subscribe((n) => this.onPresence(n, 'joined')),
+      this.chat.userLeft$.subscribe((n) => this.onPresence(n, 'left')),
+      this.chat.roomRemoved$.subscribe((e) => {
+        if (e.roomId !== this.roomId()) return;
+        this.router.navigate(['/groups', e.groupId], { queryParams: { roomRemoved: 1 } });
+      }),
+    );
+  }
+
+  // Stop listening and leave the room.
+  ngOnDestroy() {
+    this.subs.forEach((s) => s.unsubscribe());
+    if (this.roomId()) void this.chat.leaveRoom(this.roomId());
+  }
+
+  // Leave the old room, join the new one and load its messages.
+  private async switchRoom(groupId: string, roomId: string): Promise<void> {
+    const previous = this.roomId();
+    if (previous && previous !== roomId) await this.chat.leaveRoom(previous);
+
+    this.groupId.set(groupId);
+    this.roomId.set(roomId);
+    this.messages.set([]);
+    this.onlineMembers.set([]);
+    this.room.set(null);
+    this.errorMessage.set('');
+    this.loading.set(true);
+    if (!groupId || !roomId) return;
+
+    // Server checks membership and age here.
+    const ack = await this.chat.joinRoom(groupId, roomId);
+    this.loading.set(false);
+    if (!ack.ok) {
+      const queryParams = ack.minAge !== undefined ? { ageBlocked: ack.minAge } : { roomBlocked: ack.error };
+      this.router.navigate(['/groups', groupId], { queryParams });
+      return;
+    }
+    this.room.set(ack.room ?? null);
+    this.messages.set(ack.messages ?? []);
+    this.scrollToBottom();
+  }
+
+  // Show a popup when someone joins / leaves.
+  private onPresence(notice: PresenceNotice, verb: 'joined' | 'left'): void {
+    if (notice.roomId !== this.roomId()) return;
+    if (notice.user.id === this.auth.currentUser()?.id) return;
+    const toast: Toast = { id: this.nextToastId++, text: `${notice.user.displayName} ${verb} the room` };
+    this.toasts.update((list) => [...list, toast]);
+    setTimeout(() => this.dismissToast(toast.id), TOAST_MS);
+  }
+
+  // Close a popup.
+  dismissToast(id: number): void {
+    this.toasts.update((list) => list.filter((t) => t.id !== id));
+  }
+
+  // True if I sent this message.
+  isMine(message: ChatMessage): boolean {
+    return message.senderId === this.auth.currentUser()?.id;
+  }
+
+  // Sender's avatar url, or null.
+  avatarUrl(message: ChatMessage): string | null {
+    return message.senderHasAvatar ? `/api/users/${message.senderId}/avatar` : null;
+  }
+
+  // Check the picked image and show a preview.
+  async onImageSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // allow re-picking the same file later
+    if (!file) return;
+
+    const problem = validateChatImage(file);
+    if (problem) {
+      this.errorMessage.set(problem);
+      return;
+    }
+    this.errorMessage.set('');
+    this.draftImage.set(await readFileAsDataUrl(file));
+  }
+
+  // Remove the picked image.
+  clearImage(): void {
+    this.draftImage.set(null);
+  }
+
+  // Send the message.
+  async onSend(): Promise<void> {
+    if (!this.canSend()) return;
+    this.sending.set(true);
+    const ack = await this.chat.sendMessage(this.roomId(), this.draftText, this.draftImage());
+    this.sending.set(false);
+
+    if (!ack.ok) {
+      this.errorMessage.set(ack.error ?? 'Message not sent. Try again.');
+      return;
+    }
+    this.errorMessage.set('');
+    this.draftText = '';
+    this.draftImage.set(null);
+    if (ack.message && !this.messages().some((m) => m.id === ack.message!.id)) {
+      this.messages.update((list) => [...list, ack.message!]);
+      this.scrollToBottom();
     }
   }
 
-  ngOnDestroy() {
-    this.paramSub?.unsubscribe();
+  // Enter = send, Shift+Enter = new line.
+  onComposerKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void this.onSend();
+    }
   }
 
+  // Delete my message.
+  async onDelete(message: ChatMessage): Promise<void> {
+    const ack = await this.chat.deleteMessage(this.roomId(), message.id);
+    if (!ack.ok) this.errorMessage.set(ack.error ?? 'Could not delete that message.');
+  }
+
+  // Go back to the group.
   onLeave() {
     this.router.navigate(['/groups', this.groupId()]);
+  }
+
+  // Scroll to the newest message.
+  private scrollToBottom(): void {
+    setTimeout(() => {
+      const el = this.messageList?.nativeElement;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
   }
 }
