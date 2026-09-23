@@ -1,31 +1,45 @@
-// R9: reads back the admin action log, Super Admin only.
+// Admin log route (Super Admin only).
 const express = require('express');
 const db = require('../services/dbService');
 const requireAuth = require('../middleware/requireAuth');
+const { parsePaging } = require('../services/paging');
 
 const router = express.Router();
 
-// GET /api/admin/logs?action=&from=&to= — filtered administrative action log.
-router.get('/admin/logs', requireAuth, (req, res) => {
+// Make the Mongo filter from the query (action, from, to).
+function buildLogFilter({ action, from, to } = {}) {
+  const filter = {};
+  if (action) filter.action = String(action);
+  const range = {};
+  if (from && !Number.isNaN(new Date(from).getTime())) range.$gte = new Date(from).toISOString();
+  if (to && !Number.isNaN(new Date(to).getTime())) range.$lte = new Date(to).toISOString();
+  if (Object.keys(range).length) filter.timestamp = range;
+  return filter;
+}
+
+// Only the Super Admin can read the log.
+function requireSuperAdmin(req, res, next) {
   if (!req.currentUser.isSuperAdmin) {
     return res.status(403).json({ error: 'Only the Super Admin can view the admin log.' });
   }
+  next();
+}
 
-  const { action, from, to } = req.query;
-  let logs = db.getAll('adminLogs');
-
-  if (action) logs = logs.filter((entry) => entry.action === action);
-  if (from) {
-    const fromTime = new Date(from).getTime();
-    logs = logs.filter((entry) => new Date(entry.timestamp).getTime() >= fromTime);
+// GET /api/admin/logs - logs newest first, can filter. Add ?page= for pages.
+router.get('/admin/logs', requireAuth, requireSuperAdmin, async (req, res) => {
+  const filter = buildLogFilter(req.query);
+  const paging = parsePaging(req.query, 20);
+  if (!paging) {
+    return res.json(await db.findMany('adminLogs', filter, { sort: { timestamp: -1 } }));
   }
-  if (to) {
-    const toTime = new Date(to).getTime();
-    logs = logs.filter((entry) => new Date(entry.timestamp).getTime() <= toTime);
-  }
+  res.json(await db.findPage('adminLogs', filter, { sort: { timestamp: -1 }, ...paging }));
+});
 
-  logs = [...logs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  res.json(logs);
+// GET /api/admin/logs/actions - list of action types (for the filter dropdown).
+router.get('/admin/logs/actions', requireAuth, requireSuperAdmin, async (req, res) => {
+  const actions = await db.distinct('adminLogs', 'action');
+  res.json(actions.sort());
 });
 
 module.exports = router;
+module.exports.buildLogFilter = buildLogFilter;
