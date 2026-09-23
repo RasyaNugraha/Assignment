@@ -53,3 +53,10 @@ Git history here doubles as a build log: each commit corresponds to one
 working increment (verified via `node -c` / `tsc --noEmit` before commit),
 so `git log --oneline` reads as a timeline of how Phase 1 was built, not just
 a single "final" dump.
+
+## Phase 2
+
+Same model continued: `feature/mongodb-persistence`, `feature/socket-chat`,
+`feature/search-and-validation`, `test/phase2-automated-tests` and `docs/phase2`, each merged into `main` with
+a merge commit. `server/data/db.json` is now only the input for the one-off
+`npm run import-json` migration — live data lives in MongoDB.
