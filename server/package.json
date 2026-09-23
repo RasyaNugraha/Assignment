@@ -1,12 +1,16 @@
 {
   "name": "fabulari-server",
   "version": "1.0.0",
-  "description": "Fabulari chat app - Express backend (Phase 1: user/group/room management over a JSON file store)",
+  "description": "Fabulari chat app - Express + MongoDB + Socket.IO backend (Phase 2)",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "unitTest": "mocha unitTest",
+    "integrationTest": "mocha --exit --timeout 10000 integrationTest",
+    "test": "npm run unitTest && npm run integrationTest",
+    "import-json": "node scripts/import-json.js",
+    "reset-db": "node scripts/reset-db.js"
   },
   "keywords": [],
   "author": "",
@@ -14,8 +18,18 @@
   "type": "commonjs",
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "connect-mongo": "^6.0.0",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
+    "mongodb": "^7.6.0",
+    "socket.io": "^4.8.3",
     "uuid": "^14.0.1"
+  },
+  "devDependencies": {
+    "chai": "^4.5.0",
+    "chai-http": "^4.4.0",
+    "mocha": "^11.8.0",
+    "sinon": "^21.1.2",
+    "socket.io-client": "^4.8.3"
   }
 }
