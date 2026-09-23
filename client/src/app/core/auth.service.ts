@@ -35,11 +35,13 @@ export class AuthService {
   // Starts null; authGuard re-validates against the server session on load.
   currentUser = signal<User | null>(null);
 
+  // Save the user in the signal + Local Storage.
   private setUser(user: User): void {
     this.currentUser.set(user);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
   }
 
+  // Clear the saved user.
   private clearUser(): void {
     this.currentUser.set(null);
     localStorage.removeItem(STORAGE_KEY);
@@ -55,12 +57,14 @@ export class AuthService {
     });
   }
 
+  // True if there are no users yet.
   needsBootstrap(): Promise<boolean> {
     return this.toPromise(this.http.get<{ needsBootstrap: boolean }>('/api/bootstrap/status')).then(
       (res) => res.needsBootstrap,
     );
   }
 
+  // Create the first Super Admin.
   bootstrap(fields: RegistrationFields): Promise<User> {
     return this.toPromise(this.http.post<User>('/api/bootstrap', fields)).then((user) => {
       this.setUser(user);
@@ -68,6 +72,7 @@ export class AuthService {
     });
   }
 
+  // Register a new user.
   register(fields: RegistrationFields): Promise<User> {
     return this.toPromise(this.http.post<User>('/api/auth/register', fields)).then((user) => {
       this.setUser(user);
@@ -75,6 +80,7 @@ export class AuthService {
     });
   }
 
+  // Log in and save the user.
   login(email: string, password: string): Promise<User> {
     return this.toPromise(this.http.post<User>('/api/auth/login', { email, password })).then((user) => {
       this.setUser(user);
@@ -82,6 +88,7 @@ export class AuthService {
     });
   }
 
+  // Log out and clear the user.
   async logout(): Promise<void> {
     await this.toPromise(this.http.post('/api/auth/logout', {}));
     this.clearUser();

@@ -4,9 +4,10 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
 import { AuthService } from '../../core/auth.service';
+import { checkRegistration } from '../../core/form-checks';
 
-const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // mirrors server-side rule, R23
 
+// Register page for normal users.
 @Component({
   selector: 'app-register',
   standalone: true,
@@ -28,15 +29,13 @@ export class RegisterComponent {
   loading = signal(false);
   errorMessage = signal<string | null>(null);
 
+  // Register the account.
   async onSubmit() {
     this.errorMessage.set(null);
 
-    if (!PASSWORD_RULE.test(this.password)) {
-      this.errorMessage.set('Password must be at least 8 characters and include an uppercase letter.');
-      return;
-    }
-    if (this.password !== this.confirmPassword) {
-      this.errorMessage.set('Passwords do not match.');
+    const problem = checkRegistration(this);
+    if (problem) {
+      this.errorMessage.set(problem);
       return;
     }
 

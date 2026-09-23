@@ -7,7 +7,7 @@ import { UserService } from '../../core/user.service';
 
 const AVATAR_MAX_BYTES = 2 * 1024 * 1024; // matches server's PUT /users/me/avatar limit
 
-// Display name / password / preferences / avatar edits.
+// Profile page: name, password, preferences, avatar.
 @Component({
   selector: 'app-profile',
   standalone: true,
@@ -33,17 +33,22 @@ export class ProfileComponent {
 
   avatarMessage = signal<string | null>(null);
 
+  // Save the display name.
   async onSaveDisplayName() {
-    if (!this.displayName.trim()) return;
+    if (!this.displayName.trim()) {
+      this.displayNameMessage.set('Display name is required.');
+      return;
+    }
     try {
       const updated = await this.userService.updateDisplayName(this.displayName);
       this.auth.currentUser.set(updated);
       this.displayNameMessage.set('Saved.');
-    } catch {
-      this.displayNameMessage.set('Could not save. Try again.');
+    } catch (err: any) {
+      this.displayNameMessage.set(err?.error?.error ?? 'Could not save. Try again.');
     }
   }
 
+  // Change the password.
   async onChangePassword() {
     if (this.newPassword !== this.confirmNewPassword) {
       this.passwordMessage.set('New password and confirmation do not match.');
@@ -64,23 +69,28 @@ export class ProfileComponent {
     }
   }
 
+  // Save preferences.
   async onSavePreferences() {
     try {
       const updated = await this.userService.updatePreferences({ theme: this.theme as any, fontSize: this.fontSize as any });
       this.auth.currentUser.set(updated);
       this.preferencesMessage.set('Saved.');
-    } catch {
-      this.preferencesMessage.set('Could not save. Try again.');
+    } catch (err: any) {
+      this.preferencesMessage.set(err?.error?.error ?? 'Could not save. Try again.');
     }
   }
 
-  // Reads the picked file as a base64 data: URL (FileReader), then sends it
-  // straight to the server — no separate file-storage service in Phase 1.
+  // Read the image as base64 and upload it.
   async onAvatarSelected(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
 
+    if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.type)) {
+      this.avatarMessage.set('Avatar must be a PNG, JPEG, GIF or WebP image.');
+      input.value = '';
+      return;
+    }
     if (file.size > AVATAR_MAX_BYTES) {
       this.avatarMessage.set('Image must be 2MB or smaller.');
       input.value = '';
@@ -99,6 +109,7 @@ export class ProfileComponent {
     }
   }
 
+  // Read a file as base64.
   private readFileAsDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();

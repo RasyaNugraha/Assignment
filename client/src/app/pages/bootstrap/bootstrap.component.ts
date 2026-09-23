@@ -4,8 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
 import { AuthService } from '../../core/auth.service';
+import { checkRegistration } from '../../core/form-checks';
 
-const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // R23
 
 // Creates the first user (Super Admin) while the system has zero users (R1/R2).
 @Component({
@@ -29,20 +29,19 @@ export class BootstrapComponent implements OnInit {
   loading = signal(false);
   errorMessage = signal<string | null>(null);
 
+  // Go to login if bootstrap is already done.
   async ngOnInit() {
     const needsBootstrap = await this.auth.needsBootstrap().catch(() => true);
     if (!needsBootstrap) this.router.navigateByUrl('/login');
   }
 
+  // Create the Super Admin.
   async onSubmit() {
     this.errorMessage.set(null);
 
-    if (!PASSWORD_RULE.test(this.password)) {
-      this.errorMessage.set('Password must be at least 8 characters and include an uppercase letter.');
-      return;
-    }
-    if (this.password !== this.confirmPassword) {
-      this.errorMessage.set('Passwords do not match.');
+    const problem = checkRegistration(this);
+    if (problem) {
+      this.errorMessage.set(problem);
       return;
     }
 

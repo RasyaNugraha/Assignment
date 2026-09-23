@@ -135,3 +135,33 @@
   font-size: 13px;
   align-self: flex-start;
 }
+
+.main-panel__count {
+  font-weight: 400;
+  color: var(--color-muted);
+}
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.search__text {
+  flex: 1;
+  min-width: 160px;
+}
+.search__age {
+  width: 110px;
+}
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.pager__info {
+  font-size: 13px;
+  color: var(--color-muted);
+}

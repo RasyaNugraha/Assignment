@@ -3,7 +3,7 @@ import { CanActivateFn, Router } from '@angular/router';
 
 import { AuthService } from './auth.service';
 
-// Protects routes under the main layout; re-checks session with server.
+// Only logged-in users can open these pages.
 export const authGuard: CanActivateFn = async () => {
   const auth = inject(AuthService);
   const router = inject(Router);
@@ -18,7 +18,7 @@ export const authGuard: CanActivateFn = async () => {
   }
 };
 
-// Restricts Super-Admin-only screens. Assumes authGuard already ran.
+// Only the Super Admin can open these pages.
 export const superAdminGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   const router = inject(Router);

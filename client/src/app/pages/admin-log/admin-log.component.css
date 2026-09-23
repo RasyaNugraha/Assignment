@@ -88,3 +88,38 @@
   font-size: 13px;
   color: var(--color-muted);
 }
+
+.admin-log__filter {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+.admin-log__count {
+  font-size: 13px;
+  color: var(--color-muted);
+  padding-bottom: 8px;
+}
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.pager__info {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+.btn--outline {
+  background: transparent;
+  color: var(--color-blue);
+  border: 1px solid var(--color-blue);
+  border-radius: var(--radius-md);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.btn--outline:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

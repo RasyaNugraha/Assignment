@@ -21,12 +21,14 @@ export class LoginComponent implements OnInit {
   loading = signal(false);
   errorMessage = signal<string | null>(null);
 
+  // Check if bootstrap is needed.
   async ngOnInit() {
     // Redirect to /bootstrap if the system has no users yet (R2).
     const needsBootstrap = await this.auth.needsBootstrap().catch(() => false);
     if (needsBootstrap) this.router.navigateByUrl('/bootstrap');
   }
 
+  // Log in.
   async onSubmit() {
     this.errorMessage.set(null);
     this.loading.set(true);
