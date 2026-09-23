@@ -10,23 +10,23 @@
         <li class="sidebar__empty">You haven't joined any groups yet.</li>
       }
     </ul>
-    <button class="btn btn--blue" type="button" (click)="showRequestForm.set(!showRequestForm())">
+    <button class="btn btn--blue" type="button" (click)="showRequestForm.set(!showRequestForm())" [attr.aria-expanded]="showRequestForm()">
       + Request New Group
     </button>
 
     @if (showRequestForm()) {
-      <form class="request-form" (ngSubmit)="onRequestGroup()">
+      <form class="request-form" (ngSubmit)="onRequestGroup()" animate.enter="fade-in">
         <label class="field">
-          <span class="field__label">Title</span>
+          <span class="field__label">Title (max 30)</span>
           <input class="field__input" type="text" maxlength="30" [(ngModel)]="newGroupTitle" name="title" required />
         </label>
         <label class="field">
-          <span class="field__label">Description</span>
-          <textarea class="field__input" maxlength="250" [(ngModel)]="newGroupDescription" name="description" required></textarea>
+          <span class="field__label">Description (max 250)</span>
+          <textarea class="field__input" maxlength="250" [(ngModel)]="newGroupDescription" name="description"></textarea>
         </label>
         <label class="field">
           <span class="field__label">Minimum Age</span>
-          <input class="field__input" type="number" min="0" [(ngModel)]="newGroupMinAge" name="minAge" />
+          <input class="field__input" type="number" min="0" step="1" [(ngModel)]="newGroupMinAge" name="minAge" />
         </label>
         <button class="btn btn--coral" type="submit">Send Request</button>
       </form>
@@ -38,22 +38,35 @@
   </aside>
 
   <section class="main-panel">
-    <h2 class="main-panel__title">All Groups</h2>
+    <h2 class="main-panel__title">All Groups <span class="main-panel__count">({{ total() }})</span></h2>
+
+    <form class="search" role="search" (ngSubmit)="onSearch()">
+      <label class="field search__text">
+        <span class="field__label">Search</span>
+        <input class="field__input" type="search" placeholder="Title or description" [(ngModel)]="search" name="search" />
+      </label>
+      <label class="field search__age">
+        <span class="field__label">Max age limit</span>
+        <input class="field__input" type="number" min="0" placeholder="Any" [(ngModel)]="maxAge" name="maxAge" />
+      </label>
+      <button class="btn btn--blue btn--sm" type="submit">Search</button>
+      <button class="btn btn--outline btn--sm" type="button" (click)="onClearSearch()">Clear</button>
+    </form>
 
     @if (errorMessage()) {
-      <p class="main-panel__error">{{ errorMessage() }}</p>
+      <p class="main-panel__error" role="alert">{{ errorMessage() }}</p>
     }
 
     @if (loading()) {
       <p class="main-panel__loading">Loading groups…</p>
     } @else {
       <div class="group-grid">
-        @for (group of allGroups(); track group.id) {
-          <div class="group-card" [style.borderTopColor]="group.backgroundColor">
+        @for (group of groups(); track group.id) {
+          <div class="group-card" [style.borderTopColor]="group.backgroundColor" animate.enter="fade-in">
             <h3 class="group-card__title">{{ group.title }}</h3>
             <p class="group-card__desc">{{ group.description }}</p>
             <p class="group-card__meta">Min age: {{ group.minAge || 'None' }}</p>
-            @if (isMember(group)) {
+            @if (group.isMember) {
               <a class="btn btn--blue btn--sm" [routerLink]="['/groups', group.id]">Open</a>
             } @else if (group.hasPendingJoinRequest) {
               <button class="btn btn--outline btn--sm" type="button" disabled>Request Pending</button>
@@ -62,9 +75,17 @@
             }
           </div>
         } @empty {
-          <p class="main-panel__empty">No groups yet — be the first to request one.</p>
+          <p class="main-panel__empty">No groups found.</p>
         }
       </div>
+
+      @if (totalPages() > 1) {
+        <nav class="pager" aria-label="Group pages">
+          <button class="btn btn--outline btn--sm" type="button" (click)="goToPage(page() - 1)" [disabled]="page() === 1">Previous</button>
+          <span class="pager__info">Page {{ page() }} of {{ totalPages() }}</span>
+          <button class="btn btn--outline btn--sm" type="button" (click)="goToPage(page() + 1)" [disabled]="page() === totalPages()">Next</button>
+        </nav>
+      }
     }
   </section>
 </div>

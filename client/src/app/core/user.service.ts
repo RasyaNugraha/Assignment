@@ -14,6 +14,7 @@ export interface ChangePasswordFields {
 export class UserService {
   private http = inject(HttpClient);
 
+  // Turn the Observable into a Promise.
   private toPromise<T>(request$: Observable<T>): Promise<T> {
     return new Promise((resolve, reject) => {
       request$.subscribe({
@@ -23,14 +24,17 @@ export class UserService {
     });
   }
 
+  // Change display name.
   updateDisplayName(displayName: string): Promise<User> {
     return this.toPromise(this.http.put<User>('/api/users/me', { displayName }));
   }
 
+  // Change password.
   changePassword(fields: ChangePasswordFields): Promise<void> {
     return this.toPromise(this.http.put<void>('/api/users/me/password', fields));
   }
 
+  // Save theme / font size.
   updatePreferences(preferences: { theme: 'light' | 'dark'; fontSize: 'small' | 'medium' | 'large' }): Promise<User> {
     return this.toPromise(this.http.put<User>('/api/users/me/preferences', preferences));
   }

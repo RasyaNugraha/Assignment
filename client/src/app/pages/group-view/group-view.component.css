@@ -171,3 +171,19 @@
   padding: 6px 10px;
   font-size: 13px;
 }
+
+/* Phase 2 additions */
+.room-list__age {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--color-muted);
+  background: var(--color-bg);
+  padding: 1px 6px;
+  border-radius: var(--radius-md);
+}
+select.field__input {
+  background: var(--color-white);
+}
+.rooms-panel > .btn {
+  margin: 0 8px 8px 0;
+}

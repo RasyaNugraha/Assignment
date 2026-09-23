@@ -8,11 +8,9 @@ import { GroupDetail, GroupRequest, MemberSummary } from '../../core/models';
 import { AuthService } from '../../core/auth.service';
 import { GroupService } from '../../core/group.service';
 import { RequestService } from '../../core/request.service';
+import { ChatService } from '../../core/chat.service';
 
-// WIREFRAME.md §5 "Group View Screen". GET /api/groups/:id (live as of
-// Week 5) supplies the real group + its rooms; the admin panel's pending
-// join/room requests come from GET /api/requests, which the server already
-// scopes to what this Group Admin is allowed to resolve.
+// Group page: rooms, requests and admin panel.
 const EMPTY_GROUP: GroupDetail = {
   id: '',
   title: '',
@@ -33,20 +31,15 @@ const EMPTY_GROUP: GroupDetail = {
   styleUrl: './group-view.component.css',
 })
 export class GroupViewComponent implements OnInit, OnDestroy {
-  // inject() rather than constructor params — these fields are read during
-  // property initialization, which runs before a constructor body would.
+  // Services.
   private route = inject(ActivatedRoute);
   private groupService = inject(GroupService);
   private requestService = inject(RequestService);
   public auth = inject(AuthService);
+  private chat = inject(ChatService);
+  private liveSubs: Subscription[] = [];
 
-  // Per Week 4 lecture: route.snapshot.paramMap only reads the param once,
-  // when the component is first created. Angular reuses this component
-  // instance if you navigate from one /groups/:groupId to another without
-  // it being destroyed (e.g. clicking a different group in a list rendered
-  // by this same route), so a snapshot-only read would go stale. Subscribing
-  // to paramMap keeps groupId in sync — and re-fetches this group's data —
-  // for as long as the component lives.
+  // Subscribe to params so switching groups works.
   groupId = signal('');
   private paramSub?: Subscription;
 
@@ -54,12 +47,7 @@ export class GroupViewComponent implements OnInit, OnDestroy {
   loading = signal(true);
   errorMessage = signal('');
 
-  // R18 — set when we've been redirected here after roomAgeGuard (or the
-  // server's own re-check in RoomComponent) blocked entry to a Room, via the
-  // ?ageBlocked=<minAge> query param both checks use. Read once on load
-  // rather than kept subscribed: it only matters for the redirect that just
-  // happened, not for any later navigation within this same component
-  // instance (e.g. switching Groups without a full reload).
+  // Set when we got sent back from a room for being too young.
   ageBlockedMinAge = signal<number | null>(null);
 
   showRequestRoomForm = signal(false);
@@ -67,9 +55,7 @@ export class GroupViewComponent implements OnInit, OnDestroy {
   newRoomMinAge = 0;
   roomRequestSent = signal(false);
 
-  // Server computes this per-viewer in toPublicGroup() (routes/groups.js),
-  // so it's always in sync with the real adminIds list — no need to
-  // re-derive it from auth.currentUser().groupAdminOf here.
+  // True if the current user is admin of this group.
   isGroupAdmin = computed(() => this.group().isAdmin ?? false);
 
   pendingRequests = signal<GroupRequest[]>([]);
@@ -79,34 +65,63 @@ export class GroupViewComponent implements OnInit, OnDestroy {
   pendingRoomRequests = computed(() =>
     this.pendingRequests().filter((r) => r.type === 'room_creation' && r.groupId === this.groupId()),
   );
+  // Ban reports from members.
+  pendingBanRequests = computed(() =>
+    this.pendingRequests().filter((r) => r.type === 'ban_request' && r.groupId === this.groupId()),
+  );
 
-  // R8/R9 — member list is only present on the server response when the
-  // viewer isAdmin (routes/groups.js's toMemberSummaries()), so this just
-  // falls back to empty rather than needing its own loading state.
+  // Members (only sent to admins).
   members = computed(() => this.group().members ?? []);
 
-  // R4 — inline "request removal" form, keyed to which member it's open for
-  // rather than a single boolean, so opening one member's form doesn't have
-  // to fight over shared state with another's.
+  // Request removal form.
   removalTargetId = signal<string | null>(null);
   removalReason = '';
   removalRequestSent = signal(false);
 
+  // Messages after getting sent back from a room.
+  roomBlockedMessage = signal<string | null>(null);
+  roomRemovedNotice = signal(false);
+
+  // Room waiting for a second click to confirm removal.
+  confirmRemoveRoomId = signal<string | null>(null);
+
+  // Report a member form.
+  showReportForm = signal(false);
+  reportableMembers = signal<MemberSummary[]>([]);
+  reportTargetId = '';
+  reportReason = '';
+  reportSent = signal(false);
+
+  // Read query params and load the group.
   ngOnInit() {
     const ageBlocked = this.route.snapshot.queryParamMap.get('ageBlocked');
     if (ageBlocked !== null) this.ageBlockedMinAge.set(Number(ageBlocked));
+    this.roomBlockedMessage.set(this.route.snapshot.queryParamMap.get('roomBlocked'));
+    this.roomRemovedNotice.set(this.route.snapshot.queryParamMap.has('roomRemoved'));
 
     this.paramSub = this.route.paramMap.subscribe((params) => {
       const id = params.get('groupId') ?? '';
       this.groupId.set(id);
       if (id) this.loadGroup(id);
     });
+    // Live updates: new requests for admins, and my own request results.
+    this.liveSubs.push(
+      this.chat.requestsChanged$.subscribe(() => {
+        if (this.isGroupAdmin()) void this.loadPendingRequests();
+      }),
+      this.chat.notifications$.subscribe(() => {
+        if (this.groupId()) void this.loadGroup(this.groupId());
+      }),
+    );
   }
 
+  // Stop listening to params.
   ngOnDestroy() {
     this.paramSub?.unsubscribe();
+    this.liveSubs.forEach((s) => s.unsubscribe());
   }
 
+  // Load the group (and requests if admin).
   private async loadGroup(id: string): Promise<void> {
     this.loading.set(true);
     try {
@@ -114,24 +129,32 @@ export class GroupViewComponent implements OnInit, OnDestroy {
       this.group.set(group);
       this.errorMessage.set('');
       if (group.isAdmin) await this.loadPendingRequests();
-    } catch {
-      this.errorMessage.set('Could not load this group. Try refreshing.');
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not load this group. Try refreshing.');
     } finally {
       this.loading.set(false);
     }
   }
 
+  // Load pending requests for the admin panel.
   private async loadPendingRequests(): Promise<void> {
     try {
       this.pendingRequests.set(await this.requestService.getPending());
     } catch {
-      // Non-fatal — the group itself already loaded; the admin panel just
-      // shows nothing pending until the next successful refresh.
+      // Not a big deal, the group still loaded.
     }
   }
 
+  // Send a new room request.
   async onRequestRoom(): Promise<void> {
-    if (!this.newRoomName.trim()) return;
+    if (!this.newRoomName.trim()) {
+      this.errorMessage.set('A room name is required.');
+      return;
+    }
+    if (!Number.isInteger(this.newRoomMinAge) || this.newRoomMinAge < 0) {
+      this.errorMessage.set('Minimum age must be a whole number, 0 or more.');
+      return;
+    }
     try {
       await this.groupService.requestRoom(this.groupId(), {
         name: this.newRoomName,
@@ -141,61 +164,64 @@ export class GroupViewComponent implements OnInit, OnDestroy {
       this.showRequestRoomForm.set(false);
       this.newRoomName = '';
       this.newRoomMinAge = 0;
-    } catch {
-      this.errorMessage.set('Could not send the room request. Try again.');
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not send the room request. Try again.');
     }
   }
 
+  // Approve a request.
   async onApprove(request: GroupRequest): Promise<void> {
     try {
       await this.requestService.approve(request.id);
       await this.loadGroup(this.groupId());
-    } catch {
-      this.errorMessage.set('Could not approve that request. Try again.');
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not approve that request. Try again.');
     }
   }
 
+  // Deny a request.
   async onDeny(request: GroupRequest): Promise<void> {
     try {
       await this.requestService.deny(request.id);
       await this.loadPendingRequests();
-    } catch {
-      this.errorMessage.set('Could not deny that request. Try again.');
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not deny that request. Try again.');
     }
   }
 
-  // R9
+  // Make a member a co-admin.
   async onAppointAdmin(member: MemberSummary): Promise<void> {
     try {
       await this.groupService.appointAdmin(this.groupId(), member.id);
       await this.loadGroup(this.groupId());
-    } catch {
-      this.errorMessage.set('Could not appoint that member as admin. Try again.');
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not appoint that member as admin. Try again.');
     }
   }
 
-  // R8 — direct action, no approval step (see GroupService.banMember()).
+  // Ban a member.
   async onBanMember(member: MemberSummary): Promise<void> {
     try {
       await this.groupService.banMember(this.groupId(), member.id);
       await this.loadGroup(this.groupId());
-    } catch {
-      this.errorMessage.set('Could not ban that member. Try again.');
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not ban that member. Try again.');
     }
   }
 
+  // Open the removal form for a member.
   onOpenRemovalForm(member: MemberSummary): void {
     this.removalTargetId.set(member.id);
     this.removalReason = '';
   }
 
+  // Close the removal form.
   onCancelRemovalForm(): void {
     this.removalTargetId.set(null);
     this.removalReason = '';
   }
 
-  // R4 — this only files the escalation; the Super Admin queue
-  // (AdminQueueComponent) is what actually approves/denies it.
+  // Send the removal request to the Super Admin.
   async onSubmitRemoval(): Promise<void> {
     const targetId = this.removalTargetId();
     if (!targetId || !this.removalReason.trim()) return;
@@ -204,8 +230,51 @@ export class GroupViewComponent implements OnInit, OnDestroy {
       this.removalRequestSent.set(true);
       this.removalTargetId.set(null);
       this.removalReason = '';
-    } catch {
-      this.errorMessage.set('Could not send the removal request. Try again.');
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not send the removal request. Try again.');
+    }
+  }
+
+  // Remove a room (click twice to confirm).
+  async onRemoveRoom(roomId: string): Promise<void> {
+    if (this.confirmRemoveRoomId() !== roomId) {
+      this.confirmRemoveRoomId.set(roomId);
+      return;
+    }
+    try {
+      await this.groupService.removeRoom(this.groupId(), roomId);
+      this.confirmRemoveRoomId.set(null);
+      await this.loadGroup(this.groupId());
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not remove that room. Try again.');
+    }
+  }
+
+  // Open the report form and load members.
+  async onOpenReportForm(): Promise<void> {
+    this.showReportForm.set(!this.showReportForm());
+    this.reportSent.set(false);
+    if (!this.showReportForm()) return;
+    try {
+      const members = await this.groupService.getMembers(this.groupId());
+      const me = this.auth.currentUser()?.id;
+      this.reportableMembers.set(members.filter((m) => m.id !== me && !m.isAdmin));
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not load the member list.');
+    }
+  }
+
+  // Send the report.
+  async onSubmitReport(): Promise<void> {
+    if (!this.reportTargetId || !this.reportReason.trim()) return;
+    try {
+      await this.groupService.requestBan(this.groupId(), this.reportTargetId, this.reportReason);
+      this.reportSent.set(true);
+      this.showReportForm.set(false);
+      this.reportTargetId = '';
+      this.reportReason = '';
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not send the report. Try again.');
     }
   }
 }

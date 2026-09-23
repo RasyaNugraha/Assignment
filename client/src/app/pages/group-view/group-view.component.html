@@ -4,7 +4,13 @@
   }
 
   @if (ageBlockedMinAge() !== null) {
-    <p class="main-panel__error">You must be at least {{ ageBlockedMinAge() }} to enter that room.</p>
+    <p class="main-panel__error" role="alert">You must be at least {{ ageBlockedMinAge() }} to enter that room.</p>
+  }
+  @if (roomBlockedMessage()) {
+    <p class="main-panel__error" role="alert">{{ roomBlockedMessage() }}</p>
+  }
+  @if (roomRemovedNotice()) {
+    <p class="main-panel__error" role="alert">That room was removed by a Group Admin.</p>
   }
 
   @if (loading()) {
@@ -23,8 +29,17 @@
         <ul class="room-list">
           @for (room of group().rooms; track room.id) {
             <li class="room-list__item">
-              <span>#{{ room.name }}</span>
-              <a class="btn btn--blue btn--sm" [routerLink]="['/groups', groupId(), 'rooms', room.id]">Enter</a>
+              <span>#{{ room.name }} @if (room.minAge) {<small class="room-list__age">{{ room.minAge }}+</small>}</span>
+              <span class="request-list__actions">
+                @if (group().isMember && !auth.currentUser()?.isSuperAdmin) {
+                  <a class="btn btn--blue btn--sm" [routerLink]="['/groups', groupId(), 'rooms', room.id]">Enter</a>
+                }
+                @if (isGroupAdmin()) {
+                  <button class="btn btn--outline btn--sm" type="button" (click)="onRemoveRoom(room.id)">
+                    {{ confirmRemoveRoomId() === room.id ? 'Confirm remove?' : 'Remove' }}
+                  </button>
+                }
+              </span>
             </li>
           } @empty {
             <li class="room-list__empty">No rooms yet.</li>
@@ -51,6 +66,31 @@
 
         @if (roomRequestSent()) {
           <p class="sidebar__note">Request sent — your Group Admin needs to approve it.</p>
+        }
+
+        @if (group().isMember && !isGroupAdmin()) {
+          <button class="btn btn--outline btn--sm" type="button" (click)="onOpenReportForm()">Report a member</button>
+          @if (showReportForm()) {
+            <form class="request-form" (ngSubmit)="onSubmitReport()">
+              <label class="field">
+                <span class="field__label">Member</span>
+                <select class="field__input" [(ngModel)]="reportTargetId" name="reportTarget" required>
+                  <option value="" disabled>Choose a member…</option>
+                  @for (m of reportableMembers(); track m.id) {
+                    <option [value]="m.id">{{ m.displayName }}</option>
+                  }
+                </select>
+              </label>
+              <label class="field">
+                <span class="field__label">Reason (sent to the Group Admin)</span>
+                <input class="field__input" type="text" [(ngModel)]="reportReason" name="reportReason" required />
+              </label>
+              <button class="btn btn--coral btn--sm" type="submit">Send report</button>
+            </form>
+          }
+          @if (reportSent()) {
+            <p class="sidebar__note">Report sent — a Group Admin will review it.</p>
+          }
         }
       </section>
 
@@ -85,6 +125,21 @@
               </li>
             } @empty {
               <li class="request-list__empty">No pending room requests.</li>
+            }
+          </ul>
+
+          <h3 class="admin-panel__subtitle">Ban reports from members</h3>
+          <ul class="request-list">
+            @for (req of pendingBanRequests(); track req.id) {
+              <li class="request-list__item">
+                <span>{{ req.requesterDisplayName }} reported <strong>{{ req.targetDisplayName }}</strong>: "{{ req.reason }}"</span>
+                <span class="request-list__actions">
+                  <button class="btn btn--coral btn--sm" type="button" (click)="onApprove(req)">Ban</button>
+                  <button class="btn btn--outline btn--sm" type="button" (click)="onDeny(req)">Dismiss</button>
+                </span>
+              </li>
+            } @empty {
+              <li class="request-list__empty">No pending reports.</li>
             }
           </ul>
 

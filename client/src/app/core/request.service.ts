@@ -8,6 +8,7 @@ import { GroupRequest } from './models';
 export class RequestService {
   private http = inject(HttpClient);
 
+  // Turn the Observable into a Promise.
   private toPromise<T>(request$: Observable<T>): Promise<T> {
     return new Promise((resolve, reject) => {
       request$.subscribe({
@@ -17,14 +18,17 @@ export class RequestService {
     });
   }
 
+  // Get pending requests.
   getPending(): Promise<GroupRequest[]> {
     return this.toPromise(this.http.get<GroupRequest[]>('/api/requests'));
   }
 
+  // Approve a request.
   approve(id: string): Promise<GroupRequest> {
     return this.toPromise(this.http.post<GroupRequest>(`/api/requests/${id}/approve`, {}));
   }
 
+  // Deny a request.
   deny(id: string): Promise<GroupRequest> {
     return this.toPromise(this.http.post<GroupRequest>(`/api/requests/${id}/deny`, {}));
   }

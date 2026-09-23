@@ -1,12 +1,12 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
 
 import { GroupRequest } from '../../core/models';
 import { RequestService } from '../../core/request.service';
+import { ChatService } from '../../core/chat.service';
 
-// Renders + approves/denies the two request types only the Super Admin can
-// resolve: group_creation, and account_deletion (R4 — escalated by a Group
-// Admin, see GroupViewComponent's "Request Removal" action).
+// Super Admin queue: group creation and account deletion requests.
 @Component({
   selector: 'app-admin-queue',
   standalone: true,
@@ -14,23 +14,32 @@ import { RequestService } from '../../core/request.service';
   templateUrl: './admin-queue.component.html',
   styleUrl: './admin-queue.component.css',
 })
-export class AdminQueueComponent implements OnInit {
+export class AdminQueueComponent implements OnInit, OnDestroy {
   private requestService = inject(RequestService);
+  private chat = inject(ChatService);
+  private sub?: Subscription;
 
   private allPending = signal<GroupRequest[]>([]);
   groupCreationRequests = computed(() => this.allPending().filter((r) => r.type === 'group_creation'));
-  // R4 — account deletion is the other request type that only the Super
-  // Admin can ever resolve (see canResolve() in server/routes/requests.js).
+  // Account deletion requests.
   accountDeletionRequests = computed(() => this.allPending().filter((r) => r.type === 'account_deletion'));
 
   loading = signal(true);
   errorMessage = signal('');
 
+  // Load the queue on start and reload when it changes (live).
   ngOnInit(): void {
-    this.load();
+    void this.load();
+    this.sub = this.chat.requestsChanged$.subscribe(() => void this.load());
   }
 
-  private async load(): Promise<void> {
+  // Stop listening.
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
+  }
+
+  // Load pending requests.
+  async load(): Promise<void> {
     this.loading.set(true);
     try {
       this.allPending.set(await this.requestService.getPending());
@@ -42,21 +51,23 @@ export class AdminQueueComponent implements OnInit {
     }
   }
 
+  // Approve a request.
   async onApprove(request: GroupRequest): Promise<void> {
     try {
       await this.requestService.approve(request.id);
       await this.load();
-    } catch {
-      this.errorMessage.set('Could not approve that request. Try again.');
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not approve that request. Try again.');
     }
   }
 
+  // Deny a request.
   async onDeny(request: GroupRequest): Promise<void> {
     try {
       await this.requestService.deny(request.id);
       await this.load();
-    } catch {
-      this.errorMessage.set('Could not deny that request. Try again.');
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not deny that request. Try again.');
     }
   }
 }

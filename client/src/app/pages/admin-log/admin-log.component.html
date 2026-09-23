@@ -12,18 +12,19 @@
         }
       </select>
     </label>
+    <span class="admin-log__count">{{ total() }} entries</span>
   </div>
 
   @if (errorMessage()) {
-    <p class="admin-log__error">{{ errorMessage() }}</p>
+    <p class="admin-log__error" role="alert">{{ errorMessage() }}</p>
   }
 
   @if (loading()) {
     <p class="admin-log__loading">Loading…</p>
   } @else {
     <ul class="log-list">
-      @for (entry of filteredLogs(); track entry.id) {
-        <li class="log-list__item">
+      @for (entry of logs(); track entry.id) {
+        <li class="log-list__item" animate.enter="fade-in">
           <span class="log-list__action">{{ entry.action }}</span>
           <span class="log-list__details">{{ entry.details }}</span>
           <span class="log-list__time">{{ entry.timestamp | date: 'medium' }}</span>
@@ -32,5 +33,13 @@
         <li class="log-list__empty">No log entries yet.</li>
       }
     </ul>
+
+    @if (totalPages() > 1) {
+      <nav class="pager" aria-label="Log pages">
+        <button class="btn btn--outline btn--sm" type="button" (click)="goToPage(page() - 1)" [disabled]="page() === 1">Previous</button>
+        <span class="pager__info">Page {{ page() }} of {{ totalPages() }}</span>
+        <button class="btn btn--outline btn--sm" type="button" (click)="goToPage(page() + 1)" [disabled]="page() === totalPages()">Next</button>
+      </nav>
+    }
   }
 </div>
