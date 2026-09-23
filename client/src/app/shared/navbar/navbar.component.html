@@ -7,9 +7,19 @@
   </a>
 
   <div class="navbar__links">
-    <a class="navbar__link" routerLink="/groups" routerLinkActive="navbar__link--active">Groups</a>
+    <a class="navbar__link" routerLink="/groups" routerLinkActive="navbar__link--active">
+      Groups
+      @if (!auth.currentUser()?.isSuperAdmin && pendingCount() > 0) {
+        <span class="badge-count" [attr.aria-label]="pendingCount() + ' pending requests'">{{ pendingCount() }}</span>
+      }
+    </a>
     @if (auth.currentUser()?.isSuperAdmin) {
-      <a class="navbar__link" routerLink="/admin/queue" routerLinkActive="navbar__link--active">Admin Queue</a>
+      <a class="navbar__link" routerLink="/admin/queue" routerLinkActive="navbar__link--active">
+        Admin Queue
+        @if (pendingCount() > 0) {
+          <span class="badge-count" [attr.aria-label]="pendingCount() + ' pending requests'">{{ pendingCount() }}</span>
+        }
+      </a>
       <a class="navbar__link" routerLink="/admin/logs" routerLinkActive="navbar__link--active">Admin Log</a>
     }
   </div>

@@ -1,4 +1,4 @@
-// Shared frontend contracts mirroring the backend entities.
+// Data types, same shape as the server sends.
 
 export interface Group {
   id: string;
@@ -10,7 +10,7 @@ export interface Group {
   memberIds: string[];
   bannedIds?: string[]; // R8 — members banned from this specific Group only
   createdAt: string;
-  // Viewer-relative flags, computed server-side per request.
+  // Set by the server for the current user.
   isMember?: boolean;
   isAdmin?: boolean;
   hasPendingJoinRequest?: boolean;
@@ -18,7 +18,7 @@ export interface Group {
 
 export interface GroupDetail extends Group {
   rooms: Room[];
-  // Attached by the server only when the viewer isAdmin (R8/R9).
+  // Only sent to group admins.
   members?: MemberSummary[];
 }
 
@@ -28,7 +28,7 @@ export interface MemberSummary {
   isAdmin: boolean;
 }
 
-export type RequestType = 'group_creation' | 'group_join' | 'room_creation' | 'account_deletion';
+export type RequestType = 'group_creation' | 'group_join' | 'room_creation' | 'account_deletion' | 'ban_request';
 
 export interface GroupRequest {
   id: string;
@@ -39,17 +39,15 @@ export interface GroupRequest {
   // group_creation only:
   title?: string;
   description?: string;
-  // group_join / room_creation / account_deletion (groupId is the Group the
-  // reporting Group Admin filed it from):
+  // group_join / room_creation / account_deletion / ban_request:
   groupId?: string;
   // room_creation only:
   name?: string;
   minAge?: number;
-  // account_deletion only (R4) — escalated by a Group Admin, resolved only
-  // by the Super Admin (see canResolve() in server/routes/requests.js).
+  // account_deletion / ban_request:
   targetUserId?: string;
   reason?: string;
-  // Display-friendly fields the server attaches for the queue UI.
+  // Names added by the server for the UI.
   requesterDisplayName?: string;
   groupTitle?: string | null;
   targetDisplayName?: string;
@@ -61,4 +59,57 @@ export interface Room {
   name: string;
   minAge: number; // can exceed the parent Group's minAge (R17)
   createdAt: string;
+}
+
+// A chat message.
+export interface ChatMessage {
+  id: string;
+  roomId: string;
+  groupId: string;
+  senderId: string;
+  senderDisplayName: string;
+  senderHasAvatar: boolean;
+  text: string;
+  imageUrl: string | null; // base64 data URL (PNG/GIF/JPEG, ≤2MB)
+  sentAt: string; // ISO time "send" was pressed
+  seq: number; // server ordering key
+}
+
+// Someone joined / left the room.
+export interface PresenceNotice {
+  roomId: string;
+  user: { id: string; displayName: string };
+  at: string;
+}
+
+// Reply from a socket event.
+export interface SocketAck<T = unknown> {
+  ok: boolean;
+  error?: string;
+  minAge?: number;
+  room?: Room;
+  messages?: ChatMessage[];
+  message?: ChatMessage;
+  data?: T;
+}
+
+// One page of results from the server.
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+// Who is in a room right now.
+export interface RoomMembersEvent {
+  roomId: string;
+  members: { id: string; displayName: string }[];
+}
+
+// Popup sent to one user (e.g. "your request was approved").
+export interface AppNotification {
+  text: string;
+  at: string;
 }

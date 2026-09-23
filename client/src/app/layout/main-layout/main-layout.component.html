@@ -1,4 +1,14 @@
+<a class="skip-link" href="#main">Skip to content</a>
 <app-navbar></app-navbar>
-<main class="main-content">
+<main class="main-content" id="main" tabindex="-1">
   <router-outlet></router-outlet>
 </main>
+
+<div class="notifications" aria-live="polite">
+  @for (toast of toasts(); track toast.id) {
+    <div class="notification" role="status" animate.enter="toast-in">
+      <span>{{ toast.text }}</span>
+      <button type="button" class="notification__close" (click)="dismiss(toast.id)" aria-label="Dismiss">&times;</button>
+    </div>
+  }
+</div>
