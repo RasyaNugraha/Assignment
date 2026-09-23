@@ -1,4 +1,4 @@
-// User self-service routes; all operate on req.currentUser only.
+// Routes for the logged-in user's own profile.
 
 const express = require('express');
 const bcrypt = require('bcryptjs');
@@ -7,47 +7,31 @@ const requireAuth = require('../middleware/requireAuth');
 
 const router = express.Router();
 
-const PASSWORD_RULE = /^(?=.*[A-Z]).{8,}$/; // R23
+const { toPublicUser, isValidPassword } = require('../services/userUtils');
+
 const AVATAR_DATA_URL_RULE = /^data:image\/(png|jpeg|jpg|gif|webp);base64,/;
 const AVATAR_MAX_BYTES = 2 * 1024 * 1024; // ~2MB decoded
 
-function computeAge(dateOfBirth) {
-  const dob = new Date(dateOfBirth);
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const hasHadBirthdayThisYear =
-    today.getMonth() > dob.getMonth() ||
-    (today.getMonth() === dob.getMonth() && today.getDate() >= dob.getDate());
-  if (!hasHadBirthdayThisYear) age -= 1;
-  return age;
-}
-
-function toPublicUser(user) {
-  if (!user) return null;
-  const { passwordHash, ...publicUser } = user;
-  return { ...publicUser, age: computeAge(user.dateOfBirth) };
-}
-
-// PUT /api/users/me — display name only (email/username is immutable, R21).
-router.put('/users/me', requireAuth, (req, res) => {
+// PUT /api/users/me - change display name (email can't change).
+router.put('/users/me', requireAuth, async (req, res) => {
   const { displayName } = req.body || {};
-  if (!displayName || !displayName.trim()) {
+  if (typeof displayName !== 'string' || !displayName.trim()) {
     return res.status(400).json({ error: 'Display name is required.' });
   }
-  const updated = db.update('users', req.currentUser.id, { displayName: displayName.trim() });
+  const updated = await db.update('users', req.currentUser.id, { displayName: displayName.trim() });
   res.json(toPublicUser(updated));
 });
 
-// PUT /api/users/me/password — old + new + confirm, all validated server-side (R22-R24).
+// PUT /api/users/me/password - change password.
 router.put('/users/me/password', requireAuth, async (req, res) => {
   const { oldPassword, newPassword, confirmNewPassword } = req.body || {};
-  if (!oldPassword || !newPassword || !confirmNewPassword) {
+  if (![oldPassword, newPassword, confirmNewPassword].every((v) => typeof v === 'string' && v)) {
     return res.status(400).json({ error: 'Old password, new password, and confirmation are all required.' });
   }
   if (newPassword !== confirmNewPassword) {
     return res.status(400).json({ error: 'New password and confirmation do not match.' });
   }
-  if (!PASSWORD_RULE.test(newPassword)) {
+  if (!isValidPassword(newPassword)) {
     return res.status(400).json({ error: 'New password must be at least 8 characters and include an uppercase letter.' });
   }
 
@@ -55,24 +39,23 @@ router.put('/users/me/password', requireAuth, async (req, res) => {
   if (!matches) return res.status(401).json({ error: 'Current password is incorrect.' });
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
-  db.update('users', req.currentUser.id, { passwordHash });
+  await db.update('users', req.currentUser.id, { passwordHash });
   res.status(204).end();
 });
 
-// PUT /api/users/me/preferences — optional personal UI prefs (theme/font size).
-router.put('/users/me/preferences', requireAuth, (req, res) => {
+// PUT /api/users/me/preferences - theme and font size.
+router.put('/users/me/preferences', requireAuth, async (req, res) => {
   const { theme, fontSize } = req.body || {};
   const preferences = { ...req.currentUser.preferences };
   if (theme === 'light' || theme === 'dark') preferences.theme = theme;
   if (fontSize === 'small' || fontSize === 'medium' || fontSize === 'large') preferences.fontSize = fontSize;
 
-  const updated = db.update('users', req.currentUser.id, { preferences });
+  const updated = await db.update('users', req.currentUser.id, { preferences });
   res.json(toPublicUser(updated));
 });
 
-// PUT /api/users/me/avatar — avatar as a base64 data URL (no MongoDB/GridFS yet
-// in Phase 1, so it's stored inline on the user record like everything else).
-router.put('/users/me/avatar', requireAuth, (req, res) => {
+// PUT /api/users/me/avatar - save profile picture (base64, max 2MB).
+router.put('/users/me/avatar', requireAuth, async (req, res) => {
   const { avatarUrl } = req.body || {};
   if (!avatarUrl || typeof avatarUrl !== 'string' || !AVATAR_DATA_URL_RULE.test(avatarUrl)) {
     return res.status(400).json({ error: 'Avatar must be a PNG, JPEG, GIF, or WebP image.' });
@@ -83,8 +66,19 @@ router.put('/users/me/avatar', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Avatar image must be 2MB or smaller.' });
   }
 
-  const updated = db.update('users', req.currentUser.id, { avatarUrl });
+  const updated = await db.update('users', req.currentUser.id, { avatarUrl });
   res.json(toPublicUser(updated));
+});
+
+// GET /api/users/:id/avatar - returns the profile picture as an image.
+router.get('/users/:id/avatar', requireAuth, async (req, res) => {
+  const user = await db.findById('users', req.params.id);
+  if (!user || !user.avatarUrl) return res.status(404).json({ error: 'No avatar.' });
+
+  const match = /^data:(image\/[a-z]+);base64,(.*)$/s.exec(user.avatarUrl);
+  if (!match) return res.status(404).json({ error: 'No avatar.' });
+  res.set('Cache-Control', 'private, no-cache'); // revalidate via ETag after a change
+  res.type(match[1]).send(Buffer.from(match[2], 'base64'));
 });
 
 module.exports = router;

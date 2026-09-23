@@ -1,11 +1,12 @@
-// Guards routes requiring login; attaches user as req.currentUser.
+// Blocks the route if not logged in, otherwise puts the user in req.currentUser.
 const db = require('../services/dbService');
 
-function requireAuth(req, res, next) {
+// Check login before the route runs.
+async function requireAuth(req, res, next) {
   if (!req.session.userId) {
     return res.status(401).json({ error: 'Not logged in.' });
   }
-  const user = db.findById('users', req.session.userId);
+  const user = await db.findById('users', req.session.userId);
   if (!user) {
     return res.status(401).json({ error: 'Not logged in.' });
   }
