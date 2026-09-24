@@ -1006,12 +1006,14 @@ not committed.
 
 ## 11. Known limitations
 
-- **Sessions are kept in memory** (express-session's default store), so
-  restarting the server logs everyone out. A MongoDB-backed session store
-  would fix this; it isn't needed for local development.
-- **Group List has no search/filter** — every group is shown as a tile. Fine
-  for the expected size; filtering by title/age would be the next step.
-- **No separate "demote admin" action** — an admin can only step down by
-  leaving the group (and only if another admin exists, R9).
+- **No separate "demote admin" action.** An admin can only step down by
+  leaving the group, and only if another admin is left (R9).
+- **Search is simple.** Group search is a case-insensitive text match on the
+  title and description (with a max-age filter). There is no full-text index
+  or ranking; that's fine for the expected number of groups.
+- **Only the last 5 messages are kept per room** (by design, §3.4). Older
+  messages are deleted, so there is no long chat history to scroll back through.
+- **One server only.** "Who's online" uses the Socket.IO rooms of this one
+  server. Running several servers would need the Socket.IO Redis/Mongo adapter.
 - The Angular CLI marks the Vitest `unit-test` builder as *experimental* in
-  Angular 20 (it becomes the default in Angular 21); it works as documented.
+  Angular 20 (it becomes the default in Angular 21). It works as documented.
