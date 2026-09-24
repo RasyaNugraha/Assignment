@@ -47,8 +47,9 @@ who's asking.
 **Why:** REQUIREMENTS.md R20 explicitly rules out JWT and says a "basic
 session/cookie mechanism" is enough for Phase 1. Sessions are simpler to
 reason about for a project this size — the server holds the source of truth
-in memory, the client just carries a cookie, no token parsing/signing needed
-on the client.
+(in Phase 2 the sessions are stored in MongoDB via `connect-mongo`, so a
+restart doesn't log anyone out), the client just carries a cookie, no token
+parsing/signing needed on the client.
 
 **TL;DR:** Abis login, server kasih cookie ke browser. Browser kirim balik
 cookie itu tiap request, server cek cookie itu punya siapa.
