@@ -168,6 +168,62 @@ describe('RoomComponent', () => {
     expect(navigate).toHaveBeenCalledWith(['/groups', 'g1'], { queryParams: { roomRemoved: 1 } });
   });
 
+  it('shows who is typing and hides it when they stop', async () => {
+    await render();
+    const bob = { id: 'b', displayName: 'Bob' };
+    chat.typing$.next({ roomId: 'r1', user: bob, typing: true });
+    fixture.detectChanges();
+    expect(el.querySelector('.room__typing')?.textContent).toContain('Bob is typing…');
+
+    chat.typing$.next({ roomId: 'r1', user: { id: 'c', displayName: 'Carol' }, typing: true });
+    fixture.detectChanges();
+    expect(el.querySelector('.room__typing')?.textContent).toContain('Bob and Carol are typing…');
+
+    chat.typing$.next({ roomId: 'r1', user: bob, typing: false });
+    chat.typing$.next({ roomId: 'r1', user: { id: 'c', displayName: 'Carol' }, typing: false });
+    fixture.detectChanges();
+    expect(el.querySelector('.room__typing')?.textContent?.trim()).toBe('');
+  });
+
+  it('ignores typing from other rooms and from myself', async () => {
+    await render();
+    chat.typing$.next({ roomId: 'other', user: { id: 'b', displayName: 'Bob' }, typing: true });
+    chat.typing$.next({ roomId: 'r1', user: { id: 'me', displayName: 'Me Myself' }, typing: true });
+    expect(component.typingText()).toBe('');
+  });
+
+  it('stops showing someone as typing once their message arrives', async () => {
+    await render();
+    chat.typing$.next({ roomId: 'r1', user: { id: 'b', displayName: 'Bob' }, typing: true });
+    chat.messages$.next(msg({ id: 'b.1', senderId: 'b', senderDisplayName: 'Bob', text: 'done' }));
+    expect(component.typingText()).toBe('');
+  });
+
+  it('sends typing once while I type, then stops after 2s idle', async () => {
+    await render();
+    vi.useFakeTimers();
+    try {
+      component.draftText = 'h';
+      component.onDraftChange();
+      component.draftText = 'hi';
+      component.onDraftChange();
+      expect(chat.sendTyping).toHaveBeenCalledTimes(1);
+      expect(chat.sendTyping).toHaveBeenLastCalledWith('r1', true);
+      vi.advanceTimersByTime(2000);
+      expect(chat.sendTyping).toHaveBeenLastCalledWith('r1', false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops typing when the message is sent', async () => {
+    await render();
+    component.draftText = 'hello';
+    component.onDraftChange();
+    await component.onSend();
+    expect(chat.sendTyping).toHaveBeenLastCalledWith('r1', false);
+  });
+
   it('leaves the room when the component is destroyed', async () => {
     await render();
     fixture.destroy();

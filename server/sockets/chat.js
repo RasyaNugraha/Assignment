@@ -159,6 +159,17 @@ function registerChatHandlers(io, { messageSecret }) {
       return { ok: true };
     });
 
+    // "X is typing…": pass it on to the others in the room (no db, no reply).
+    socket.on('room:typing', (payload) => {
+      const roomId = payload?.roomId;
+      if (!joinedRooms.has(roomId) || !socket.data.user) return;
+      socket.to(channel(roomId)).emit('room:typing', {
+        roomId,
+        user: socket.data.user,
+        typing: payload.typing === true,
+      });
+    });
+
     // Closing the tab = leaving all rooms.
     socket.on('disconnect', async () => {
       if (!joinedRooms.size) return;

@@ -28,9 +28,9 @@ class FakeSocket {
   timeout() {
     return this;
   }
-  emit(event: string, payload: any, ack: (err: Error | null, reply: unknown) => void) {
+  emit(event: string, payload: any, ack?: (err: Error | null, reply: unknown) => void) {
     this.emitted.push({ event, payload });
-    ack(null, this.nextAck);
+    ack?.(null, this.nextAck);
     return this;
   }
   // Pretend the server sent an event.
@@ -167,6 +167,22 @@ describe('ChatService live updates', () => {
     service.connect();
     socket.serverPush('requests:changed', undefined);
     expect(calls).toBe(1);
+  });
+
+  it('sendTyping() emits room:typing once connected, and does nothing before', () => {
+    service.sendTyping('r1', true);
+    expect(socket.emitted).toEqual([]);
+    service.connect();
+    service.sendTyping('r1', true);
+    expect(socket.emitted).toEqual([{ event: 'room:typing', payload: { roomId: 'r1', typing: true } }]);
+  });
+
+  it('turns room:typing into typing$', () => {
+    const who: string[] = [];
+    service.typing$.subscribe((e) => who.push(`${e.user.displayName}:${e.typing}`));
+    service.connect();
+    socket.serverPush('room:typing', { roomId: 'r1', user: { id: 'b', displayName: 'Bob' }, typing: true });
+    expect(who).toEqual(['Bob:true']);
   });
 
   it('returns a friendly error when the server does not answer', async () => {
