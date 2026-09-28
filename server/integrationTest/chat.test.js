@@ -161,6 +161,41 @@ describe('Real-time chat (Socket.IO)', function () {
     });
   });
 
+  describe('room:typing', () => {
+    it('tells the others in the room who is typing, but not the typer', async () => {
+      const alice = await connect(cookies.alice);
+      const bob = await connect(cookies.bob);
+      await emit(alice, 'room:join', { groupId: group.id, roomId: room.id });
+      await emit(bob, 'room:join', { groupId: group.id, roomId: room.id });
+
+      let aliceGotOwn = false;
+      alice.on('room:typing', () => { aliceGotOwn = true; });
+      const started = nextEvent(bob, 'room:typing');
+      alice.emit('room:typing', { roomId: room.id, typing: true });
+      const e = await started;
+      expect(e).to.include({ roomId: room.id, typing: true });
+      expect(e.user).to.deep.equal({ id: users.alice.id, displayName: 'alice Tester' });
+
+      const stopped = nextEvent(bob, 'room:typing');
+      alice.emit('room:typing', { roomId: room.id, typing: false });
+      expect((await stopped).typing).to.equal(false);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(aliceGotOwn).to.equal(false);
+    });
+
+    it('ignores typing from a socket that has not joined the room', async () => {
+      const alice = await connect(cookies.alice);
+      const bob = await connect(cookies.bob);
+      await emit(bob, 'room:join', { groupId: group.id, roomId: room.id });
+
+      let bobGotIt = false;
+      bob.on('room:typing', () => { bobGotIt = true; });
+      alice.emit('room:typing', { roomId: room.id, typing: true });
+      await new Promise((r) => setTimeout(r, 200));
+      expect(bobGotIt).to.equal(false);
+    });
+  });
+
   describe('notifications', () => {
     it('tells the requester when their join request is approved', async () => {
       const carol = await connect(cookies.carol);

@@ -48,11 +48,16 @@ test('three users chat live; the one who leaves stops getting messages', async (
   }
   await expect(alice.locator('.room__online')).toContainText('Online (3)');
 
+  // Alice types: the others see "is typing…" until she sends.
+  await alice.getByLabel('Message', { exact: true }).pressSequentially('Hello');
+  await expect(bob.locator('.room__typing')).toContainText('alice E2E is typing…');
+
   // Alice sends, both others see it.
   await alice.getByLabel('Message', { exact: true }).fill('Hello everyone');
   await alice.getByLabel('Message', { exact: true }).press('Enter');
   await expect(bob.getByText('Hello everyone')).toBeVisible();
   await expect(carol.getByText('Hello everyone')).toBeVisible();
+  await expect(bob.locator('.room__typing')).toHaveText('');
 
   // Carol leaves: the others get a popup, and she no longer receives messages.
   await carol.getByRole('button', { name: 'Leave Room' }).click();

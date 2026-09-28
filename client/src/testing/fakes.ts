@@ -1,7 +1,7 @@
 // Shared fake data and mock services for the Angular tests.
 import { Subject } from 'rxjs';
 import { User } from '../app/core/auth.service';
-import { AppNotification, ChatMessage, Group, GroupDetail, PresenceNotice, RoomMembersEvent, SocketAck } from '../app/core/models';
+import { AppNotification, ChatMessage, Group, GroupDetail, PresenceNotice, RoomMembersEvent, SocketAck, TypingEvent } from '../app/core/models';
 
 // A normal logged-in user.
 export function makeUser(over: Partial<User> = {}): User {
@@ -72,6 +72,7 @@ export class ChatServiceMock {
   roomMembers$ = new Subject<RoomMembersEvent>();
   notifications$ = new Subject<AppNotification>();
   requestsChanged$ = new Subject<void>();
+  typing$ = new Subject<TypingEvent>();
 
   joinAck: SocketAck = { ok: true, room: { id: 'r1', groupId: 'g1', name: 'general', minAge: 0, createdAt: '' }, messages: [] };
   connect = vi.fn();
@@ -80,6 +81,7 @@ export class ChatServiceMock {
   leaveRoom = vi.fn(async () => ({ ok: true }));
   sendMessage = vi.fn(async (): Promise<SocketAck> => ({ ok: true }));
   deleteMessage = vi.fn(async (): Promise<SocketAck> => ({ ok: true }));
+  sendTyping = vi.fn();
 }
 
 // Render, wait for promises, render again.

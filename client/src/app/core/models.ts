@@ -108,6 +108,13 @@ export interface RoomMembersEvent {
   members: { id: string; displayName: string }[];
 }
 
+// Someone started / stopped typing in a room.
+export interface TypingEvent {
+  roomId: string;
+  user: { id: string; displayName: string };
+  typing: boolean;
+}
+
 // Popup sent to one user (e.g. "your request was approved").
 export interface AppNotification {
   text: string;

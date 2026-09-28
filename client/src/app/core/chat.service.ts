@@ -2,7 +2,7 @@ import { Injectable, InjectionToken, inject } from '@angular/core';
 import { Observable, Subject } from 'rxjs';
 import { io, Socket } from 'socket.io-client';
 
-import { AppNotification, ChatMessage, PresenceNotice, RoomMembersEvent, SocketAck } from './models';
+import { AppNotification, ChatMessage, PresenceNotice, RoomMembersEvent, SocketAck, TypingEvent } from './models';
 
 // Handles all Socket.IO stuff for the chat.
 
@@ -37,6 +37,7 @@ export class ChatService {
   private membersSubject = new Subject<RoomMembersEvent>();
   private notificationSubject = new Subject<AppNotification>();
   private requestsChangedSubject = new Subject<void>();
+  private typingSubject = new Subject<TypingEvent>();
 
   readonly messages$: Observable<ChatMessage> = this.messageSubject.asObservable();
   readonly messageDeleted$: Observable<MessageDeletedEvent> = this.deletedSubject.asObservable();
@@ -46,6 +47,7 @@ export class ChatService {
   readonly roomMembers$: Observable<RoomMembersEvent> = this.membersSubject.asObservable();
   readonly notifications$: Observable<AppNotification> = this.notificationSubject.asObservable();
   readonly requestsChanged$: Observable<void> = this.requestsChangedSubject.asObservable();
+  readonly typing$: Observable<TypingEvent> = this.typingSubject.asObservable();
 
   // Connect on first use and listen for server events.
   private ensureConnected(): Socket {
@@ -59,6 +61,7 @@ export class ChatService {
     socket.on('room:members', (e: RoomMembersEvent) => this.membersSubject.next(e));
     socket.on('notification', (n: AppNotification) => this.notificationSubject.next(n));
     socket.on('requests:changed', () => this.requestsChangedSubject.next());
+    socket.on('room:typing', (e: TypingEvent) => this.typingSubject.next(e));
     socket.connect();
     this.socket = socket;
     return socket;
@@ -98,6 +101,11 @@ export class ChatService {
   // Delete one of my messages.
   deleteMessage(roomId: string, messageId: string): Promise<SocketAck> {
     return this.request('message:delete', { roomId, messageId });
+  }
+
+  // Tell the room I started / stopped typing (no reply needed).
+  sendTyping(roomId: string, typing: boolean): void {
+    this.socket?.emit('room:typing', { roomId, typing });
   }
 
   // Close the socket (on logout).

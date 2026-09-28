@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -6,7 +6,7 @@ import { Subscription } from 'rxjs';
 
 import { AuthService } from '../../core/auth.service';
 import { ChatService } from '../../core/chat.service';
-import { ChatMessage, PresenceNotice, Room } from '../../core/models';
+import { ChatMessage, PresenceNotice, Room, TypingEvent } from '../../core/models';
 import { readFileAsDataUrl, validateChatImage } from '../../core/image-file';
 
 // Popup message (join / leave).
@@ -16,6 +16,10 @@ interface Toast {
 }
 
 const TOAST_MS = 4000;
+// Stop "typing" after 2s without a key press.
+const TYPING_IDLE_MS = 2000;
+// Hide someone's "typing" if we hear nothing for 5s (e.g. they closed the tab).
+const TYPING_EXPIRE_MS = 5000;
 
 @Component({
   selector: 'app-room',
@@ -43,6 +47,16 @@ export class RoomComponent implements OnInit, OnDestroy {
   toasts = signal<Toast[]>([]);
   // Who is in the room right now.
   onlineMembers = signal<{ id: string; displayName: string }[]>([]);
+  // Who is typing right now (not me).
+  typingUsers = signal<{ id: string; displayName: string }[]>([]);
+  // "Bob is typing…" text, or '' when nobody is.
+  typingText = computed(() => {
+    const names = this.typingUsers().map((u) => u.displayName);
+    if (names.length === 0) return '';
+    if (names.length === 1) return `${names[0]} is typing…`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`;
+    return 'Several people are typing…';
+  });
 
   draftText = '';
   draftImage = signal<string | null>(null);
@@ -55,6 +69,9 @@ export class RoomComponent implements OnInit, OnDestroy {
 
   private subs: Subscription[] = [];
   private nextToastId = 1;
+  private iAmTyping = false;
+  private stopTypingTimer: ReturnType<typeof setTimeout> | null = null;
+  private typingExpiry = new Map<string, ReturnType<typeof setTimeout>>();
 
   // Join the room and listen for chat events.
   ngOnInit() {
@@ -73,6 +90,7 @@ export class RoomComponent implements OnInit, OnDestroy {
         if (m.roomId !== this.roomId()) return;
         // Skip if we already have it.
         if (this.messages().some((existing) => existing.id === m.id)) return;
+        this.removeTyper(m.senderId);
         this.messages.update((list) => [...list, m]);
         this.scrollToBottom();
       }),
@@ -84,7 +102,11 @@ export class RoomComponent implements OnInit, OnDestroy {
         if (e.roomId === this.roomId()) this.onlineMembers.set(e.members);
       }),
       this.chat.userJoined$.subscribe((n) => this.onPresence(n, 'joined')),
-      this.chat.userLeft$.subscribe((n) => this.onPresence(n, 'left')),
+      this.chat.userLeft$.subscribe((n) => {
+        this.onPresence(n, 'left');
+        if (n.roomId === this.roomId()) this.removeTyper(n.user.id);
+      }),
+      this.chat.typing$.subscribe((e) => this.onTyping(e)),
       this.chat.roomRemoved$.subscribe((e) => {
         if (e.roomId !== this.roomId()) return;
         this.router.navigate(['/groups', e.groupId], { queryParams: { roomRemoved: 1 } });
@@ -95,12 +117,16 @@ export class RoomComponent implements OnInit, OnDestroy {
   // Stop listening and leave the room.
   ngOnDestroy() {
     this.subs.forEach((s) => s.unsubscribe());
+    this.stopTyping();
+    this.clearTypers();
     if (this.roomId()) void this.chat.leaveRoom(this.roomId());
   }
 
   // Leave the old room, join the new one and load its messages.
   private async switchRoom(groupId: string, roomId: string): Promise<void> {
     const previous = this.roomId();
+    this.stopTyping();
+    this.clearTypers();
     if (previous && previous !== roomId) await this.chat.leaveRoom(previous);
 
     this.groupId.set(groupId);
@@ -132,6 +158,58 @@ export class RoomComponent implements OnInit, OnDestroy {
     const toast: Toast = { id: this.nextToastId++, text: `${notice.user.displayName} ${verb} the room` };
     this.toasts.update((list) => [...list, toast]);
     setTimeout(() => this.dismissToast(toast.id), TOAST_MS);
+  }
+
+  // Someone else started / stopped typing.
+  private onTyping(e: TypingEvent): void {
+    if (e.roomId !== this.roomId() || e.user.id === this.auth.currentUser()?.id) return;
+    if (!e.typing) {
+      this.removeTyper(e.user.id);
+      return;
+    }
+    if (!this.typingUsers().some((u) => u.id === e.user.id)) {
+      this.typingUsers.update((list) => [...list, e.user]);
+    }
+    clearTimeout(this.typingExpiry.get(e.user.id));
+    this.typingExpiry.set(e.user.id, setTimeout(() => this.removeTyper(e.user.id), TYPING_EXPIRE_MS));
+  }
+
+  // Take one user off the typing list.
+  private removeTyper(userId: string): void {
+    clearTimeout(this.typingExpiry.get(userId));
+    this.typingExpiry.delete(userId);
+    this.typingUsers.update((list) => list.filter((u) => u.id !== userId));
+  }
+
+  // Empty the typing list.
+  private clearTypers(): void {
+    this.typingExpiry.forEach((t) => clearTimeout(t));
+    this.typingExpiry.clear();
+    this.typingUsers.set([]);
+  }
+
+  // Called on every change in the message box.
+  onDraftChange(): void {
+    if (!this.roomId()) return;
+    if (!this.draftText.trim()) {
+      this.stopTyping();
+      return;
+    }
+    if (!this.iAmTyping) {
+      this.iAmTyping = true;
+      this.chat.sendTyping(this.roomId(), true);
+    }
+    if (this.stopTypingTimer) clearTimeout(this.stopTypingTimer);
+    this.stopTypingTimer = setTimeout(() => this.stopTyping(), TYPING_IDLE_MS);
+  }
+
+  // Tell the room I stopped typing.
+  private stopTyping(): void {
+    if (this.stopTypingTimer) clearTimeout(this.stopTypingTimer);
+    this.stopTypingTimer = null;
+    if (!this.iAmTyping) return;
+    this.iAmTyping = false;
+    this.chat.sendTyping(this.roomId(), false);
   }
 
   // Close a popup.
@@ -184,6 +262,7 @@ export class RoomComponent implements OnInit, OnDestroy {
     this.errorMessage.set('');
     this.draftText = '';
     this.draftImage.set(null);
+    this.stopTyping();
     if (ack.message && !this.messages().some((m) => m.id === ack.message!.id)) {
       this.messages.update((list) => [...list, ack.message!]);
       this.scrollToBottom();
