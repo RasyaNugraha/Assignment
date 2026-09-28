@@ -9,7 +9,7 @@ and Socket.IO for 3813ICT Full Stack Development.
 ## Status
 
 Phase 2 — fully working app: MongoDB persistence (incl. sessions), real-time chat over Socket.IO
-(text + images, last-5 history, delete own messages, join/leave popups, who's online), live
+(text + images, last-5 history, delete own messages, join/leave popups, who's online, "is typing…"), live
 notifications, group search + pagination, and automated tests (Mocha/Chai/Sinon on the server,
 Vitest on the Angular client, Playwright end-to-end).
 

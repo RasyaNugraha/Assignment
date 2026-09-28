@@ -46,7 +46,7 @@ that prototype into a fully working application:
 | Large data sets | Every group shown at once | **Search + filter + pagination** for the group list and the admin log (MongoDB `skip`/`limit`) |
 | Other real-time features | — | **Who's online** list in each room, **live notifications** ("your request was approved"), **live pending-request badge** and admin queues that refresh themselves |
 | UI polish | Static | Angular `animate.enter` animations (messages, cards, popups), skip link, visible focus, reduced-motion support |
-| Testing | None | **309 automated tests**: Mocha + assert + Sinon (server unit), Mocha + Chai + chai-http + socket.io-client against a test MongoDB (server integration), Vitest + TestBed (Angular, every component and service), **Playwright E2E** |
+| Testing | None | **318 automated tests**: Mocha + assert + Sinon (server unit), Mocha + Chai + chai-http + socket.io-client against a test MongoDB (server integration), Vitest + TestBed (Angular, every component and service), **Playwright E2E** |
 
 The data-access module (`services/dbService.js`) kept the **same function
 names** as Phase 1 (`getAll`, `findById`, `findOne`, `findMany`, `insert`,
@@ -174,6 +174,7 @@ client may also check it for fast feedback, but the server is the authority).
 | R39 | *(Phase 2)* Works with large data sets. | ✅ Server | Group list: search (title/description), max-age filter, "my groups" and pages of 9 (`skip`/`limit`, regex input escaped). Admin log: pages of 20, action types from `distinct`. |
 | R40 | *(Phase 2)* Real-time updates beyond chat. | ✅ | Socket events `room:members` (who's online), `notification` (request approved/denied → popup), `requests:changed` (badge + admin queues refresh). |
 | R41 | *(Phase 2)* Fault tolerant input. | ✅ Server + client | Every field type-checked on the server (a number/array/object where text is expected → `400`, never a crash); broken JSON → `400`; client checks the same rules first and shows the server's message when it still fails; approving twice at the same time only applies once. |
+| R42 | *(Phase 2)* Show when someone is typing in a room. | ✅ | Socket event `room:typing`; the Room page shows "Bob is typing…" / "Bob and Carol are typing…" above the message box. |
 
 ---
 
@@ -431,6 +432,7 @@ receives `{ ok: true, ... }` or `{ ok: false, error }`.
 | `room:leave` | `{ roomId }` | `{ ok }` | Others receive `room:user-left`. |
 | `message:send` | `{ roomId, text?, imageUrl?, clientSentAt }` | `{ ok, message: ChatMessage }` | Must have joined; access re-checked; text and/or PNG/GIF/JPEG ≤2MB; stored, trimmed to last 5, broadcast as `message:new`. |
 | `message:delete` | `{ roomId, messageId }` | `{ ok }` | Only the sender (signed id check); removed from MongoDB if still stored; `message:deleted` broadcast. |
+| `room:typing` | `{ roomId, typing: boolean }` | — (no ack) | Only from a socket that joined the room. Passed on to the others in the room; no database access. The client sends `true` on the first key press and `false` after 2s idle or on send. |
 
 ### 6.2 Server → client
 
@@ -442,6 +444,7 @@ receives `{ ok: true, ... }` or `{ ok: false, error }`.
 | `room:user-left` | same | everyone else in the room (also sent on disconnect) |
 | `room:removed` | `{ roomId, groupId }` | everyone in the room (from `DELETE /groups/:gid/rooms/:rid`) |
 | `room:members` | `{ roomId, members: { id, displayName }[] }` | everyone in the room, after every join / leave / disconnect (who's online) |
+| `room:typing` | `{ roomId, user: { id, displayName }, typing }` | everyone else in the room ("Bob is typing…"; the client hides it after 5s without news) |
 | `notification` | `{ text, at }` | one user (`user:<id>`) — e.g. "Request approved: joining "Chess"." |
 | `requests:changed` | — | every connected client, whenever a request is created or resolved (badge + admin queues reload) |
 
@@ -532,6 +535,7 @@ changed in Phase 2 are below; all are responsive (breakpoint 768px).
 │     │ image  │                                 │
 │     └────────┘                                 │
 │   … scrollable; newest at the bottom …         │
+│ bob is typing…                                 │  ← room:typing (italic, grey)
 ├───────────────────────────────────────────────┤
 │ [📎] [ Type a message…                ] [Send] │  ← Enter = send, Shift+Enter = new line
 │ [Leave Room]                                   │
@@ -539,7 +543,8 @@ changed in Phase 2 are below; all are responsive (breakpoint 768px).
 ```
 Single column at every width; the message list fills the remaining viewport
 height and scrolls independently, so the composer is always visible. "Delete"
-appears only on your own messages. Avatars are the user's profile picture, or
+appears only on your own messages. The "is typing…" line keeps its height
+even when empty, so the page doesn't jump when it shows up. Avatars are the user's profile picture, or
 their initial in a coloured circle if they have none (your own messages use
 the coral colour).
 
@@ -650,7 +655,7 @@ Navbar (any page): Groups · Profile · [Super Admin: Admin Queue · Admin Log] 
 Run: `cd server && npm run unitTest`, `npm run integrationTest` (needs
 `mongod`), `npm test` (both); `cd client && npm test`; `cd client && npm run e2e`.
 
-**Totals: 55 server unit + 108 server integration + 141 Angular + 5 E2E = 309 automated tests.**
+**Totals: 55 server unit + 110 server integration + 148 Angular + 5 E2E = 318 automated tests.**
 
 ### 9.3 Server unit tests — `npm run unitTest`
 
@@ -739,91 +744,93 @@ Run: `cd server && npm run unitTest`, `npm run integrationTest` (needs
 | 21 | `chat.test.js` | Real-time chat (Socket.IO) room:join | notifies people already in the room when someone joins and leaves | ✅ Pass |
 | 22 | `chat.test.js` | Real-time chat (Socket.IO) room:members (who is online) | sends the online list to the room when someone joins and leaves | ✅ Pass |
 | 23 | `chat.test.js` | Real-time chat (Socket.IO) room:members (who is online) | a user who left the room no longer gets its messages | ✅ Pass |
-| 24 | `chat.test.js` | Real-time chat (Socket.IO) notifications | tells the requester when their join request is approved | ✅ Pass |
-| 25 | `chat.test.js` | Real-time chat (Socket.IO) notifications | tells every client when the request queue changes | ✅ Pass |
-| 26 | `chat.test.js` | Real-time chat (Socket.IO) message:send | broadcasts a text message to everyone in the room, with sender + timestamp | ✅ Pass |
-| 27 | `chat.test.js` | Real-time chat (Socket.IO) message:send | sends an image message | ✅ Pass |
-| 28 | `chat.test.js` | Real-time chat (Socket.IO) message:send | rejects an empty message and an unsupported image type | ✅ Pass |
-| 29 | `chat.test.js` | Real-time chat (Socket.IO) message:send | keeps only the last 5 messages of a room in MongoDB | ✅ Pass |
-| 30 | `chat.test.js` | Real-time chat (Socket.IO) message:delete | lets the sender delete their own message and tells everyone in the room | ✅ Pass |
-| 31 | `chat.test.js` | Real-time chat (Socket.IO) message:delete | refuses to delete someone else's message | ✅ Pass |
-| 32 | `chat.test.js` | Real-time chat (Socket.IO) message:delete | still lets the sender delete a message that is no longer stored on the server | ✅ Pass |
-| 33 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | returns one page plus the totals | ✅ Pass |
-| 34 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | returns the last, shorter page | ✅ Pass |
-| 35 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | still returns a plain array without ?page (old behaviour) | ✅ Pass |
-| 36 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | searches title and description (case-insensitive) | ✅ Pass |
-| 37 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | treats regex characters as plain text | ✅ Pass |
-| 38 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | filters by maximum age | ✅ Pass |
-| 39 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | lists only my groups with ?mine=true | ✅ Pass |
-| 40 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | pages the admin log | ✅ Pass |
-| 41 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | lists the action types | ✅ Pass |
-| 42 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | is Super Admin only | ✅ Pass |
-| 43 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | group title as a number | ✅ Pass |
-| 44 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | minAge as text | ✅ Pass |
-| 45 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | room name as an object | ✅ Pass |
-| 46 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | login with a number password | ✅ Pass |
-| 47 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | register with an array as the name | ✅ Pass |
-| 48 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | display name as a number | ✅ Pass |
-| 49 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | broken JSON body | ✅ Pass |
-| 50 | `extras.test.js` | Search, pagination and validation Double approve | two approve clicks at the same time only apply once | ✅ Pass |
-| 51 | `groups.test.js` | Group routes GET /api/groups | lists every group, even for visitors who are not logged in | ✅ Pass |
-| 52 | `groups.test.js` | Group routes GET /api/groups | adds viewer-specific flags (isMember / isAdmin) | ✅ Pass |
-| 53 | `groups.test.js` | Group routes GET /api/groups/:id | returns the rooms, and the member list only to a Group Admin | ✅ Pass |
-| 54 | `groups.test.js` | Group routes GET /api/groups/:id | returns 404 for an unknown group | ✅ Pass |
-| 55 | `groups.test.js` | Group routes POST /api/groups/requests | files a group creation request for the Super Admin | ✅ Pass |
-| 56 | `groups.test.js` | Group routes POST /api/groups/requests | rejects a title longer than 30 characters (R13) | ✅ Pass |
-| 57 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a user younger than the group minimum age immediately | ✅ Pass |
-| 58 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a second join request while one is pending | ✅ Pass |
-| 59 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a join request from an existing member | ✅ Pass |
-| 60 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | lets a member into an all-ages room | ✅ Pass |
-| 61 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | blocks the Super Admin (does not use chat) | ✅ Pass |
-| 62 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | blocks a non-member | ✅ Pass |
-| 63 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId/messages | returns the stored messages (none yet) to a member | ✅ Pass |
-| 64 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId/messages | is forbidden to the Super Admin (no access to chat history) | ✅ Pass |
-| 65 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | rejects a room request from a non-member | ✅ Pass |
-| 66 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | rejects a room name longer than 30 characters | ✅ Pass |
-| 67 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | files a room_creation request for a member | ✅ Pass |
-| 68 | `groups.test.js` | Group routes PATCH /api/groups/:id | lets a Group Admin change the description | ✅ Pass |
-| 69 | `groups.test.js` | Group routes PATCH /api/groups/:id | refuses to rename the group | ✅ Pass |
-| 70 | `groups.test.js` | Group routes PATCH /api/groups/:id | refuses edits from a non-admin member | ✅ Pass |
-| 71 | `groups.test.js` | Group routes GET /api/groups/:id/members | lists members for any member of the group | ✅ Pass |
-| 72 | `groups.test.js` | Group routes GET /api/groups/:id/members | is forbidden to non-members | ✅ Pass |
-| 73 | `groups.test.js` | Group routes POST /api/groups/:id/admins | only lets a Group Admin appoint | ✅ Pass |
-| 74 | `groups.test.js` | Group routes POST /api/groups/:id/admins | appoints a member as co-admin | ✅ Pass |
-| 75 | `groups.test.js` | Group routes POST /api/groups/:id/ban | only lets a Group Admin ban | ✅ Pass |
-| 76 | `groups.test.js` | Group routes POST /api/groups/:id/ban | refuses to ban another Group Admin | ✅ Pass |
-| 77 | `groups.test.js` | Group routes POST /api/groups/:id/ban | refuses to let an admin ban themselves | ✅ Pass |
-| 78 | `groups.test.js` | Group routes POST /api/groups/:id/leave | lets a co-admin leave now that there are two admins | ✅ Pass |
-| 79 | `groups.test.js` | Group routes POST /api/groups/:id/leave | stops the sole admin from leaving | ✅ Pass |
-| 80 | `groups.test.js` | Group routes POST /api/groups/:id/ban (successful ban) | removes the member from this group only and blocks rejoining | ✅ Pass |
-| 81 | `groups.test.js` | Group routes DELETE /api/groups/:groupId/rooms/:roomId | is forbidden to non-admins | ✅ Pass |
-| 82 | `groups.test.js` | Group routes DELETE /api/groups/:groupId/rooms/:roomId | lets the Group Admin remove a room and logs it | ✅ Pass |
-| 83 | `requests.test.js` | Request queue routes GET /api/requests | shows a Group Admin only the requests for their own group | ✅ Pass |
-| 84 | `requests.test.js` | Request queue routes GET /api/requests | shows a regular member nothing to approve | ✅ Pass |
-| 85 | `requests.test.js` | Request queue routes GET /api/requests | requires login | ✅ Pass |
-| 86 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | approving a group creation creates the group with the requester as admin | ✅ Pass |
-| 87 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | a Group Admin cannot approve a group creation request | ✅ Pass |
-| 88 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | cannot approve the same request twice | ✅ Pass |
-| 89 | `requests.test.js` | Request queue routes POST /api/requests/:id/deny | marks the request denied without changing anything else | ✅ Pass |
-| 90 | `requests.test.js` | Request queue routes POST /api/requests/:id/deny | returns 404 for an unknown request | ✅ Pass |
-| 91 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a member reports someone; the Group Admin approves and they are banned | ✅ Pass |
-| 92 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a banned user cannot request to rejoin (R8) | ✅ Pass |
-| 93 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a report needs a reason | ✅ Pass |
-| 94 | `requests.test.js` | Request queue routes Account deletion (R4 escalation) | Group Admin escalates, Super Admin approves, user is removed everywhere | ✅ Pass |
-| 95 | `requests.test.js` | Request queue routes Account deletion (R4 escalation) | requires a reason | ✅ Pass |
-| 96 | `users.test.js` | User & admin log routes PUT /api/users/me | changes the display name | ✅ Pass |
-| 97 | `users.test.js` | User & admin log routes PUT /api/users/me | rejects an empty display name | ✅ Pass |
-| 98 | `users.test.js` | User & admin log routes PUT /api/users/me/password | rejects a wrong current password | ✅ Pass |
-| 99 | `users.test.js` | User & admin log routes PUT /api/users/me/password | rejects a mismatched confirmation | ✅ Pass |
-| 100 | `users.test.js` | User & admin log routes PUT /api/users/me/password | changes the password so the new one works for login | ✅ Pass |
-| 101 | `users.test.js` | User & admin log routes PUT /api/users/me/preferences | saves valid preferences | ✅ Pass |
-| 102 | `users.test.js` | User & admin log routes PUT /api/users/me/preferences | ignores invalid values | ✅ Pass |
-| 103 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | rejects something that is not an image | ✅ Pass |
-| 104 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | stores the avatar and serves it back as an image | ✅ Pass |
-| 105 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | returns 404 for a user without an avatar | ✅ Pass |
-| 106 | `users.test.js` | User & admin log routes GET /api/admin/logs | is only available to the Super Admin | ✅ Pass |
-| 107 | `users.test.js` | User & admin log routes GET /api/admin/logs | returns logged admin actions, newest first | ✅ Pass |
-| 108 | `users.test.js` | User & admin log routes GET /api/admin/logs | filters by action type | ✅ Pass |
+| 24 | `chat.test.js` | Real-time chat (Socket.IO) room:typing | tells the others in the room who is typing, but not the typer | ✅ Pass |
+| 25 | `chat.test.js` | Real-time chat (Socket.IO) room:typing | ignores typing from a socket that has not joined the room | ✅ Pass |
+| 26 | `chat.test.js` | Real-time chat (Socket.IO) notifications | tells the requester when their join request is approved | ✅ Pass |
+| 27 | `chat.test.js` | Real-time chat (Socket.IO) notifications | tells every client when the request queue changes | ✅ Pass |
+| 28 | `chat.test.js` | Real-time chat (Socket.IO) message:send | broadcasts a text message to everyone in the room, with sender + timestamp | ✅ Pass |
+| 29 | `chat.test.js` | Real-time chat (Socket.IO) message:send | sends an image message | ✅ Pass |
+| 30 | `chat.test.js` | Real-time chat (Socket.IO) message:send | rejects an empty message and an unsupported image type | ✅ Pass |
+| 31 | `chat.test.js` | Real-time chat (Socket.IO) message:send | keeps only the last 5 messages of a room in MongoDB | ✅ Pass |
+| 32 | `chat.test.js` | Real-time chat (Socket.IO) message:delete | lets the sender delete their own message and tells everyone in the room | ✅ Pass |
+| 33 | `chat.test.js` | Real-time chat (Socket.IO) message:delete | refuses to delete someone else's message | ✅ Pass |
+| 34 | `chat.test.js` | Real-time chat (Socket.IO) message:delete | still lets the sender delete a message that is no longer stored on the server | ✅ Pass |
+| 35 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | returns one page plus the totals | ✅ Pass |
+| 36 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | returns the last, shorter page | ✅ Pass |
+| 37 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | still returns a plain array without ?page (old behaviour) | ✅ Pass |
+| 38 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | searches title and description (case-insensitive) | ✅ Pass |
+| 39 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | treats regex characters as plain text | ✅ Pass |
+| 40 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | filters by maximum age | ✅ Pass |
+| 41 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | lists only my groups with ?mine=true | ✅ Pass |
+| 42 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | pages the admin log | ✅ Pass |
+| 43 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | lists the action types | ✅ Pass |
+| 44 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | is Super Admin only | ✅ Pass |
+| 45 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | group title as a number | ✅ Pass |
+| 46 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | minAge as text | ✅ Pass |
+| 47 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | room name as an object | ✅ Pass |
+| 48 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | login with a number password | ✅ Pass |
+| 49 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | register with an array as the name | ✅ Pass |
+| 50 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | display name as a number | ✅ Pass |
+| 51 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | broken JSON body | ✅ Pass |
+| 52 | `extras.test.js` | Search, pagination and validation Double approve | two approve clicks at the same time only apply once | ✅ Pass |
+| 53 | `groups.test.js` | Group routes GET /api/groups | lists every group, even for visitors who are not logged in | ✅ Pass |
+| 54 | `groups.test.js` | Group routes GET /api/groups | adds viewer-specific flags (isMember / isAdmin) | ✅ Pass |
+| 55 | `groups.test.js` | Group routes GET /api/groups/:id | returns the rooms, and the member list only to a Group Admin | ✅ Pass |
+| 56 | `groups.test.js` | Group routes GET /api/groups/:id | returns 404 for an unknown group | ✅ Pass |
+| 57 | `groups.test.js` | Group routes POST /api/groups/requests | files a group creation request for the Super Admin | ✅ Pass |
+| 58 | `groups.test.js` | Group routes POST /api/groups/requests | rejects a title longer than 30 characters (R13) | ✅ Pass |
+| 59 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a user younger than the group minimum age immediately | ✅ Pass |
+| 60 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a second join request while one is pending | ✅ Pass |
+| 61 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a join request from an existing member | ✅ Pass |
+| 62 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | lets a member into an all-ages room | ✅ Pass |
+| 63 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | blocks the Super Admin (does not use chat) | ✅ Pass |
+| 64 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | blocks a non-member | ✅ Pass |
+| 65 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId/messages | returns the stored messages (none yet) to a member | ✅ Pass |
+| 66 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId/messages | is forbidden to the Super Admin (no access to chat history) | ✅ Pass |
+| 67 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | rejects a room request from a non-member | ✅ Pass |
+| 68 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | rejects a room name longer than 30 characters | ✅ Pass |
+| 69 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | files a room_creation request for a member | ✅ Pass |
+| 70 | `groups.test.js` | Group routes PATCH /api/groups/:id | lets a Group Admin change the description | ✅ Pass |
+| 71 | `groups.test.js` | Group routes PATCH /api/groups/:id | refuses to rename the group | ✅ Pass |
+| 72 | `groups.test.js` | Group routes PATCH /api/groups/:id | refuses edits from a non-admin member | ✅ Pass |
+| 73 | `groups.test.js` | Group routes GET /api/groups/:id/members | lists members for any member of the group | ✅ Pass |
+| 74 | `groups.test.js` | Group routes GET /api/groups/:id/members | is forbidden to non-members | ✅ Pass |
+| 75 | `groups.test.js` | Group routes POST /api/groups/:id/admins | only lets a Group Admin appoint | ✅ Pass |
+| 76 | `groups.test.js` | Group routes POST /api/groups/:id/admins | appoints a member as co-admin | ✅ Pass |
+| 77 | `groups.test.js` | Group routes POST /api/groups/:id/ban | only lets a Group Admin ban | ✅ Pass |
+| 78 | `groups.test.js` | Group routes POST /api/groups/:id/ban | refuses to ban another Group Admin | ✅ Pass |
+| 79 | `groups.test.js` | Group routes POST /api/groups/:id/ban | refuses to let an admin ban themselves | ✅ Pass |
+| 80 | `groups.test.js` | Group routes POST /api/groups/:id/leave | lets a co-admin leave now that there are two admins | ✅ Pass |
+| 81 | `groups.test.js` | Group routes POST /api/groups/:id/leave | stops the sole admin from leaving | ✅ Pass |
+| 82 | `groups.test.js` | Group routes POST /api/groups/:id/ban (successful ban) | removes the member from this group only and blocks rejoining | ✅ Pass |
+| 83 | `groups.test.js` | Group routes DELETE /api/groups/:groupId/rooms/:roomId | is forbidden to non-admins | ✅ Pass |
+| 84 | `groups.test.js` | Group routes DELETE /api/groups/:groupId/rooms/:roomId | lets the Group Admin remove a room and logs it | ✅ Pass |
+| 85 | `requests.test.js` | Request queue routes GET /api/requests | shows a Group Admin only the requests for their own group | ✅ Pass |
+| 86 | `requests.test.js` | Request queue routes GET /api/requests | shows a regular member nothing to approve | ✅ Pass |
+| 87 | `requests.test.js` | Request queue routes GET /api/requests | requires login | ✅ Pass |
+| 88 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | approving a group creation creates the group with the requester as admin | ✅ Pass |
+| 89 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | a Group Admin cannot approve a group creation request | ✅ Pass |
+| 90 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | cannot approve the same request twice | ✅ Pass |
+| 91 | `requests.test.js` | Request queue routes POST /api/requests/:id/deny | marks the request denied without changing anything else | ✅ Pass |
+| 92 | `requests.test.js` | Request queue routes POST /api/requests/:id/deny | returns 404 for an unknown request | ✅ Pass |
+| 93 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a member reports someone; the Group Admin approves and they are banned | ✅ Pass |
+| 94 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a banned user cannot request to rejoin (R8) | ✅ Pass |
+| 95 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a report needs a reason | ✅ Pass |
+| 96 | `requests.test.js` | Request queue routes Account deletion (R4 escalation) | Group Admin escalates, Super Admin approves, user is removed everywhere | ✅ Pass |
+| 97 | `requests.test.js` | Request queue routes Account deletion (R4 escalation) | requires a reason | ✅ Pass |
+| 98 | `users.test.js` | User & admin log routes PUT /api/users/me | changes the display name | ✅ Pass |
+| 99 | `users.test.js` | User & admin log routes PUT /api/users/me | rejects an empty display name | ✅ Pass |
+| 100 | `users.test.js` | User & admin log routes PUT /api/users/me/password | rejects a wrong current password | ✅ Pass |
+| 101 | `users.test.js` | User & admin log routes PUT /api/users/me/password | rejects a mismatched confirmation | ✅ Pass |
+| 102 | `users.test.js` | User & admin log routes PUT /api/users/me/password | changes the password so the new one works for login | ✅ Pass |
+| 103 | `users.test.js` | User & admin log routes PUT /api/users/me/preferences | saves valid preferences | ✅ Pass |
+| 104 | `users.test.js` | User & admin log routes PUT /api/users/me/preferences | ignores invalid values | ✅ Pass |
+| 105 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | rejects something that is not an image | ✅ Pass |
+| 106 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | stores the avatar and serves it back as an image | ✅ Pass |
+| 107 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | returns 404 for a user without an avatar | ✅ Pass |
+| 108 | `users.test.js` | User & admin log routes GET /api/admin/logs | is only available to the Super Admin | ✅ Pass |
+| 109 | `users.test.js` | User & admin log routes GET /api/admin/logs | returns logged admin actions, newest first | ✅ Pass |
+| 110 | `users.test.js` | User & admin log routes GET /api/admin/logs | filters by action type | ✅ Pass |
 
 ### 9.5 Angular unit tests (Vitest) — `npm test` in `client/`
 
@@ -863,113 +870,120 @@ Run: `cd server && npm run unitTest`, `npm run integrationTest` (needs
 | 32 | `chat.service.spec.ts` | ChatService live updates | turns notification events into notifications$ | ✅ Pass |
 | 33 | `chat.service.spec.ts` | ChatService live updates | turns room:members into roomMembers$ | ✅ Pass |
 | 34 | `chat.service.spec.ts` | ChatService live updates | turns requests:changed into requestsChanged$ | ✅ Pass |
-| 35 | `chat.service.spec.ts` | ChatService live updates | returns a friendly error when the server does not answer | ✅ Pass |
-| 36 | `form-checks.spec.ts` | checkRegistration() | returns null for a valid form | ✅ Pass |
-| 37 | `form-checks.spec.ts` | checkRegistration() | needs first and last name | ✅ Pass |
-| 38 | `form-checks.spec.ts` | checkRegistration() | checks the email | ✅ Pass |
-| 39 | `form-checks.spec.ts` | checkRegistration() | rejects a date of birth in the future | ✅ Pass |
-| 40 | `form-checks.spec.ts` | checkRegistration() | checks password strength and that both passwords match | ✅ Pass |
-| 41 | `group.service.spec.ts` | GroupService | getAll() GETs /api/groups | ✅ Pass |
-| 42 | `group.service.spec.ts` | GroupService | requestToJoin() POSTs to the join endpoint | ✅ Pass |
-| 43 | `group.service.spec.ts` | GroupService | removeRoom() sends DELETE for that room | ✅ Pass |
-| 44 | `group.service.spec.ts` | GroupService | requestBan() sends the member and reason | ✅ Pass |
-| 45 | `group.service.spec.ts` | GroupService | passes server errors (e.g. age-blocked join) through to the caller | ✅ Pass |
-| 46 | `group.service.spec.ts` | GroupService search + extras | getPage() sends search, maxAge and paging | ✅ Pass |
-| 47 | `group.service.spec.ts` | GroupService search + extras | getPage() skips empty search and maxAge | ✅ Pass |
-| 48 | `group.service.spec.ts` | GroupService search + extras | getMine() asks for my groups only | ✅ Pass |
-| 49 | `group.service.spec.ts` | GroupService search + extras | getMembers() GETs the member list | ✅ Pass |
-| 50 | `group.service.spec.ts` | GroupService search + extras | appointAdmin() and banMember() send the user id | ✅ Pass |
-| 51 | `image-file.spec.ts` | image-file helpers validateChatImage() | accepts PNG, GIF and JPEG images | ✅ Pass |
-| 52 | `image-file.spec.ts` | image-file helpers validateChatImage() | rejects other file types | ✅ Pass |
-| 53 | `image-file.spec.ts` | image-file helpers validateChatImage() | accepts exactly 2MB and rejects anything larger | ✅ Pass |
-| 54 | `image-file.spec.ts` | image-file helpers readFileAsDataUrl() | reads a file into a base64 data URL | ✅ Pass |
-| 55 | `image-file.spec.ts` | image-file helpers | rejects a GIF that is too big | ✅ Pass |
-| 56 | `request.service.spec.ts` | RequestService | is created | ✅ Pass |
-| 57 | `request.service.spec.ts` | RequestService | getPending() GETs /api/requests | ✅ Pass |
-| 58 | `request.service.spec.ts` | RequestService | approve() POSTs to the approve endpoint | ✅ Pass |
-| 59 | `request.service.spec.ts` | RequestService | deny() POSTs to the deny endpoint | ✅ Pass |
-| 60 | `request.service.spec.ts` | RequestService | passes a 409 (already resolved) back to the caller | ✅ Pass |
-| 61 | `room.guard.spec.ts` | roomAgeGuard | lets the user in when they are old enough | ✅ Pass |
-| 62 | `room.guard.spec.ts` | roomAgeGuard | sends a too-young user back with the ageBlocked banner | ✅ Pass |
-| 63 | `room.guard.spec.ts` | roomAgeGuard | sends the user back to the group when the room does not exist | ✅ Pass |
-| 64 | `room.guard.spec.ts` | roomAgeGuard | sends the user back when loading the group fails | ✅ Pass |
-| 65 | `room.guard.spec.ts` | roomAgeGuard | goes to /groups when nobody is logged in | ✅ Pass |
-| 66 | `user.service.spec.ts` | UserService | updateDisplayName() PUTs the new name | ✅ Pass |
-| 67 | `user.service.spec.ts` | UserService | changePassword() sends old, new and confirm | ✅ Pass |
-| 68 | `user.service.spec.ts` | UserService | changePassword() rejects when the old password is wrong | ✅ Pass |
-| 69 | `user.service.spec.ts` | UserService | updatePreferences() PUTs theme and font size | ✅ Pass |
-| 70 | `user.service.spec.ts` | UserService | updateAvatar() PUTs the base64 image | ✅ Pass |
-| 71 | `main-layout.component.spec.ts` | MainLayoutComponent | connects the socket when the layout opens | ✅ Pass |
-| 72 | `main-layout.component.spec.ts` | MainLayoutComponent | shows the navbar and a skip link | ✅ Pass |
-| 73 | `main-layout.component.spec.ts` | MainLayoutComponent | shows a popup when a notification arrives and refreshes the user | ✅ Pass |
-| 74 | `main-layout.component.spec.ts` | MainLayoutComponent | hides the popup after a few seconds | ✅ Pass |
-| 75 | `main-layout.component.spec.ts` | MainLayoutComponent | closes a popup with the × button | ✅ Pass |
-| 76 | `admin-log.component.spec.ts` | AdminLogComponent | shows the log entries and the total | ✅ Pass |
-| 77 | `admin-log.component.spec.ts` | AdminLogComponent | fills the filter with the action types from the server | ✅ Pass |
-| 78 | `admin-log.component.spec.ts` | AdminLogComponent | changing the filter reloads page 1 with that action | ✅ Pass |
-| 79 | `admin-log.component.spec.ts` | AdminLogComponent | pages forward and backward | ✅ Pass |
-| 80 | `admin-log.component.spec.ts` | AdminLogComponent | shows an error when the log cannot load | ✅ Pass |
-| 81 | `admin-queue.component.spec.ts` | AdminQueueComponent | splits requests into group creation and account deletion | ✅ Pass |
-| 82 | `admin-queue.component.spec.ts` | AdminQueueComponent | approves a request and reloads the queue | ✅ Pass |
-| 83 | `admin-queue.component.spec.ts` | AdminQueueComponent | denies a request | ✅ Pass |
-| 84 | `admin-queue.component.spec.ts` | AdminQueueComponent | shows the server error when approving fails | ✅ Pass |
-| 85 | `admin-queue.component.spec.ts` | AdminQueueComponent | reloads by itself when the queue changes (socket) | ✅ Pass |
-| 86 | `bootstrap.component.spec.ts` | BootstrapComponent | stays on the page while the system has no users | ✅ Pass |
-| 87 | `bootstrap.component.spec.ts` | BootstrapComponent | goes to /login when bootstrap is already done | ✅ Pass |
-| 88 | `bootstrap.component.spec.ts` | BootstrapComponent | does not submit a weak password | ✅ Pass |
-| 89 | `bootstrap.component.spec.ts` | BootstrapComponent | creates the Super Admin and goes to /groups | ✅ Pass |
-| 90 | `bootstrap.component.spec.ts` | BootstrapComponent | shows the server errors in the page | ✅ Pass |
-| 91 | `group-list.component.spec.ts` | GroupListComponent | shows all groups and my groups | ✅ Pass |
-| 92 | `group-list.component.spec.ts` | GroupListComponent | shows Open for my groups and Request to Join for the others | ✅ Pass |
-| 93 | `group-list.component.spec.ts` | GroupListComponent | searches from page 1 with the typed text and age | ✅ Pass |
-| 94 | `group-list.component.spec.ts` | GroupListComponent | shows the pager and moves to the next page | ✅ Pass |
-| 95 | `group-list.component.spec.ts` | GroupListComponent | marks a group as pending after asking to join | ✅ Pass |
-| 96 | `group-list.component.spec.ts` | GroupListComponent | shows the server reason when joining fails (e.g. too young) | ✅ Pass |
-| 97 | `group-list.component.spec.ts` | GroupListComponent | checks the new group form before sending | ✅ Pass |
-| 98 | `group-list.component.spec.ts` | GroupListComponent | reloads when a notification arrives | ✅ Pass |
-| 99 | `group-view.component.spec.ts` | GroupViewComponent | shows the group and its rooms with Enter buttons for members | ✅ Pass |
-| 100 | `group-view.component.spec.ts` | GroupViewComponent | shows the age banner after being sent back from a room | ✅ Pass |
-| 101 | `group-view.component.spec.ts` | GroupViewComponent | shows the admin panel with join requests and ban reports for a Group Admin | ✅ Pass |
-| 102 | `group-view.component.spec.ts` | GroupViewComponent | removes a room only after a second (confirm) click | ✅ Pass |
-| 103 | `group-view.component.spec.ts` | GroupViewComponent | checks the room request form before sending | ✅ Pass |
-| 104 | `group-view.component.spec.ts` | GroupViewComponent | lets a member report someone (not themselves) | ✅ Pass |
-| 105 | `group-view.component.spec.ts` | GroupViewComponent | reloads pending requests live when the queue changes (admins) | ✅ Pass |
-| 106 | `login.component.spec.ts` | LoginComponent | redirects to /bootstrap when the system has no users yet (R2) | ✅ Pass |
-| 107 | `login.component.spec.ts` | LoginComponent | logs in with the typed credentials and goes to /groups | ✅ Pass |
-| 108 | `login.component.spec.ts` | LoginComponent | shows the server's error message when login fails | ✅ Pass |
-| 109 | `login.component.spec.ts` | LoginComponent extra | has a link to the register page | ✅ Pass |
-| 110 | `login.component.spec.ts` | LoginComponent extra | shows a general message when the server gives no reason | ✅ Pass |
-| 111 | `profile.component.spec.ts` | ProfileComponent | fills the form from the logged-in user, email is read-only | ✅ Pass |
-| 112 | `profile.component.spec.ts` | ProfileComponent | saves the display name and updates the user | ✅ Pass |
-| 113 | `profile.component.spec.ts` | ProfileComponent | does not save an empty display name | ✅ Pass |
-| 114 | `profile.component.spec.ts` | ProfileComponent | checks the new passwords match and shows server errors | ✅ Pass |
-| 115 | `profile.component.spec.ts` | ProfileComponent | saves preferences | ✅ Pass |
-| 116 | `profile.component.spec.ts` | ProfileComponent | rejects a non-image or too-big avatar before uploading | ✅ Pass |
-| 117 | `register.component.spec.ts` | RegisterComponent | is created with an empty form | ✅ Pass |
-| 118 | `register.component.spec.ts` | RegisterComponent | does not submit when the passwords do not match | ✅ Pass |
-| 119 | `register.component.spec.ts` | RegisterComponent | does not submit a date of birth in the future | ✅ Pass |
-| 120 | `register.component.spec.ts` | RegisterComponent | does not submit a weak password | ✅ Pass |
-| 121 | `register.component.spec.ts` | RegisterComponent | registers and goes to /groups | ✅ Pass |
-| 122 | `register.component.spec.ts` | RegisterComponent | shows the server errors in the page | ✅ Pass |
-| 123 | `room.component.spec.ts` | RoomComponent | joins the room from the route params and shows its name | ✅ Pass |
-| 124 | `room.component.spec.ts` | RoomComponent | renders the stored history (last 5) returned on join | ✅ Pass |
-| 125 | `room.component.spec.ts` | RoomComponent | adds messages pushed live by the server | ✅ Pass |
-| 126 | `room.component.spec.ts` | RoomComponent | ignores messages for a different room | ✅ Pass |
-| 127 | `room.component.spec.ts` | RoomComponent | shows a Delete button only on my own messages | ✅ Pass |
-| 128 | `room.component.spec.ts` | RoomComponent | removes a message when the server broadcasts its deletion | ✅ Pass |
-| 129 | `room.component.spec.ts` | RoomComponent | shows a popup when another user joins | ✅ Pass |
-| 130 | `room.component.spec.ts` | RoomComponent | sends the typed text through the ChatService and clears the box | ✅ Pass |
-| 131 | `room.component.spec.ts` | RoomComponent | disables Send while the message box is empty | ✅ Pass |
-| 132 | `room.component.spec.ts` | RoomComponent | redirects back to the group with the age banner when the server blocks entry | ✅ Pass |
-| 133 | `room.component.spec.ts` | RoomComponent | shows who is online in the room | ✅ Pass |
-| 134 | `room.component.spec.ts` | RoomComponent | shows the error from the server when a message is not sent | ✅ Pass |
-| 135 | `room.component.spec.ts` | RoomComponent | goes back to the group when the room is removed | ✅ Pass |
-| 136 | `room.component.spec.ts` | RoomComponent | leaves the room when the component is destroyed | ✅ Pass |
-| 137 | `navbar.component.spec.ts` | NavbarComponent | shows the admin links only to the Super Admin | ✅ Pass |
-| 138 | `navbar.component.spec.ts` | NavbarComponent | hides the admin links from normal users and skips the badge | ✅ Pass |
-| 139 | `navbar.component.spec.ts` | NavbarComponent | shows the pending request count for a Group Admin | ✅ Pass |
-| 140 | `navbar.component.spec.ts` | NavbarComponent | reloads the badge when the request queue changes | ✅ Pass |
-| 141 | `navbar.component.spec.ts` | NavbarComponent | logs out, closes the socket and goes to /login | ✅ Pass |
+| 35 | `chat.service.spec.ts` | ChatService live updates | sendTyping() emits room:typing once connected, and does nothing before | ✅ Pass |
+| 36 | `chat.service.spec.ts` | ChatService live updates | turns room:typing into typing$ | ✅ Pass |
+| 37 | `chat.service.spec.ts` | ChatService live updates | returns a friendly error when the server does not answer | ✅ Pass |
+| 38 | `form-checks.spec.ts` | checkRegistration() | returns null for a valid form | ✅ Pass |
+| 39 | `form-checks.spec.ts` | checkRegistration() | needs first and last name | ✅ Pass |
+| 40 | `form-checks.spec.ts` | checkRegistration() | checks the email | ✅ Pass |
+| 41 | `form-checks.spec.ts` | checkRegistration() | rejects a date of birth in the future | ✅ Pass |
+| 42 | `form-checks.spec.ts` | checkRegistration() | checks password strength and that both passwords match | ✅ Pass |
+| 43 | `group.service.spec.ts` | GroupService | getAll() GETs /api/groups | ✅ Pass |
+| 44 | `group.service.spec.ts` | GroupService | requestToJoin() POSTs to the join endpoint | ✅ Pass |
+| 45 | `group.service.spec.ts` | GroupService | removeRoom() sends DELETE for that room | ✅ Pass |
+| 46 | `group.service.spec.ts` | GroupService | requestBan() sends the member and reason | ✅ Pass |
+| 47 | `group.service.spec.ts` | GroupService | passes server errors (e.g. age-blocked join) through to the caller | ✅ Pass |
+| 48 | `group.service.spec.ts` | GroupService search + extras | getPage() sends search, maxAge and paging | ✅ Pass |
+| 49 | `group.service.spec.ts` | GroupService search + extras | getPage() skips empty search and maxAge | ✅ Pass |
+| 50 | `group.service.spec.ts` | GroupService search + extras | getMine() asks for my groups only | ✅ Pass |
+| 51 | `group.service.spec.ts` | GroupService search + extras | getMembers() GETs the member list | ✅ Pass |
+| 52 | `group.service.spec.ts` | GroupService search + extras | appointAdmin() and banMember() send the user id | ✅ Pass |
+| 53 | `image-file.spec.ts` | image-file helpers validateChatImage() | accepts PNG, GIF and JPEG images | ✅ Pass |
+| 54 | `image-file.spec.ts` | image-file helpers validateChatImage() | rejects other file types | ✅ Pass |
+| 55 | `image-file.spec.ts` | image-file helpers validateChatImage() | accepts exactly 2MB and rejects anything larger | ✅ Pass |
+| 56 | `image-file.spec.ts` | image-file helpers readFileAsDataUrl() | reads a file into a base64 data URL | ✅ Pass |
+| 57 | `image-file.spec.ts` | image-file helpers | rejects a GIF that is too big | ✅ Pass |
+| 58 | `request.service.spec.ts` | RequestService | is created | ✅ Pass |
+| 59 | `request.service.spec.ts` | RequestService | getPending() GETs /api/requests | ✅ Pass |
+| 60 | `request.service.spec.ts` | RequestService | approve() POSTs to the approve endpoint | ✅ Pass |
+| 61 | `request.service.spec.ts` | RequestService | deny() POSTs to the deny endpoint | ✅ Pass |
+| 62 | `request.service.spec.ts` | RequestService | passes a 409 (already resolved) back to the caller | ✅ Pass |
+| 63 | `room.guard.spec.ts` | roomAgeGuard | lets the user in when they are old enough | ✅ Pass |
+| 64 | `room.guard.spec.ts` | roomAgeGuard | sends a too-young user back with the ageBlocked banner | ✅ Pass |
+| 65 | `room.guard.spec.ts` | roomAgeGuard | sends the user back to the group when the room does not exist | ✅ Pass |
+| 66 | `room.guard.spec.ts` | roomAgeGuard | sends the user back when loading the group fails | ✅ Pass |
+| 67 | `room.guard.spec.ts` | roomAgeGuard | goes to /groups when nobody is logged in | ✅ Pass |
+| 68 | `user.service.spec.ts` | UserService | updateDisplayName() PUTs the new name | ✅ Pass |
+| 69 | `user.service.spec.ts` | UserService | changePassword() sends old, new and confirm | ✅ Pass |
+| 70 | `user.service.spec.ts` | UserService | changePassword() rejects when the old password is wrong | ✅ Pass |
+| 71 | `user.service.spec.ts` | UserService | updatePreferences() PUTs theme and font size | ✅ Pass |
+| 72 | `user.service.spec.ts` | UserService | updateAvatar() PUTs the base64 image | ✅ Pass |
+| 73 | `main-layout.component.spec.ts` | MainLayoutComponent | connects the socket when the layout opens | ✅ Pass |
+| 74 | `main-layout.component.spec.ts` | MainLayoutComponent | shows the navbar and a skip link | ✅ Pass |
+| 75 | `main-layout.component.spec.ts` | MainLayoutComponent | shows a popup when a notification arrives and refreshes the user | ✅ Pass |
+| 76 | `main-layout.component.spec.ts` | MainLayoutComponent | hides the popup after a few seconds | ✅ Pass |
+| 77 | `main-layout.component.spec.ts` | MainLayoutComponent | closes a popup with the × button | ✅ Pass |
+| 78 | `admin-log.component.spec.ts` | AdminLogComponent | shows the log entries and the total | ✅ Pass |
+| 79 | `admin-log.component.spec.ts` | AdminLogComponent | fills the filter with the action types from the server | ✅ Pass |
+| 80 | `admin-log.component.spec.ts` | AdminLogComponent | changing the filter reloads page 1 with that action | ✅ Pass |
+| 81 | `admin-log.component.spec.ts` | AdminLogComponent | pages forward and backward | ✅ Pass |
+| 82 | `admin-log.component.spec.ts` | AdminLogComponent | shows an error when the log cannot load | ✅ Pass |
+| 83 | `admin-queue.component.spec.ts` | AdminQueueComponent | splits requests into group creation and account deletion | ✅ Pass |
+| 84 | `admin-queue.component.spec.ts` | AdminQueueComponent | approves a request and reloads the queue | ✅ Pass |
+| 85 | `admin-queue.component.spec.ts` | AdminQueueComponent | denies a request | ✅ Pass |
+| 86 | `admin-queue.component.spec.ts` | AdminQueueComponent | shows the server error when approving fails | ✅ Pass |
+| 87 | `admin-queue.component.spec.ts` | AdminQueueComponent | reloads by itself when the queue changes (socket) | ✅ Pass |
+| 88 | `bootstrap.component.spec.ts` | BootstrapComponent | stays on the page while the system has no users | ✅ Pass |
+| 89 | `bootstrap.component.spec.ts` | BootstrapComponent | goes to /login when bootstrap is already done | ✅ Pass |
+| 90 | `bootstrap.component.spec.ts` | BootstrapComponent | does not submit a weak password | ✅ Pass |
+| 91 | `bootstrap.component.spec.ts` | BootstrapComponent | creates the Super Admin and goes to /groups | ✅ Pass |
+| 92 | `bootstrap.component.spec.ts` | BootstrapComponent | shows the server errors in the page | ✅ Pass |
+| 93 | `group-list.component.spec.ts` | GroupListComponent | shows all groups and my groups | ✅ Pass |
+| 94 | `group-list.component.spec.ts` | GroupListComponent | shows Open for my groups and Request to Join for the others | ✅ Pass |
+| 95 | `group-list.component.spec.ts` | GroupListComponent | searches from page 1 with the typed text and age | ✅ Pass |
+| 96 | `group-list.component.spec.ts` | GroupListComponent | shows the pager and moves to the next page | ✅ Pass |
+| 97 | `group-list.component.spec.ts` | GroupListComponent | marks a group as pending after asking to join | ✅ Pass |
+| 98 | `group-list.component.spec.ts` | GroupListComponent | shows the server reason when joining fails (e.g. too young) | ✅ Pass |
+| 99 | `group-list.component.spec.ts` | GroupListComponent | checks the new group form before sending | ✅ Pass |
+| 100 | `group-list.component.spec.ts` | GroupListComponent | reloads when a notification arrives | ✅ Pass |
+| 101 | `group-view.component.spec.ts` | GroupViewComponent | shows the group and its rooms with Enter buttons for members | ✅ Pass |
+| 102 | `group-view.component.spec.ts` | GroupViewComponent | shows the age banner after being sent back from a room | ✅ Pass |
+| 103 | `group-view.component.spec.ts` | GroupViewComponent | shows the admin panel with join requests and ban reports for a Group Admin | ✅ Pass |
+| 104 | `group-view.component.spec.ts` | GroupViewComponent | removes a room only after a second (confirm) click | ✅ Pass |
+| 105 | `group-view.component.spec.ts` | GroupViewComponent | checks the room request form before sending | ✅ Pass |
+| 106 | `group-view.component.spec.ts` | GroupViewComponent | lets a member report someone (not themselves) | ✅ Pass |
+| 107 | `group-view.component.spec.ts` | GroupViewComponent | reloads pending requests live when the queue changes (admins) | ✅ Pass |
+| 108 | `login.component.spec.ts` | LoginComponent | redirects to /bootstrap when the system has no users yet (R2) | ✅ Pass |
+| 109 | `login.component.spec.ts` | LoginComponent | logs in with the typed credentials and goes to /groups | ✅ Pass |
+| 110 | `login.component.spec.ts` | LoginComponent | shows the server's error message when login fails | ✅ Pass |
+| 111 | `login.component.spec.ts` | LoginComponent extra | has a link to the register page | ✅ Pass |
+| 112 | `login.component.spec.ts` | LoginComponent extra | shows a general message when the server gives no reason | ✅ Pass |
+| 113 | `profile.component.spec.ts` | ProfileComponent | fills the form from the logged-in user, email is read-only | ✅ Pass |
+| 114 | `profile.component.spec.ts` | ProfileComponent | saves the display name and updates the user | ✅ Pass |
+| 115 | `profile.component.spec.ts` | ProfileComponent | does not save an empty display name | ✅ Pass |
+| 116 | `profile.component.spec.ts` | ProfileComponent | checks the new passwords match and shows server errors | ✅ Pass |
+| 117 | `profile.component.spec.ts` | ProfileComponent | saves preferences | ✅ Pass |
+| 118 | `profile.component.spec.ts` | ProfileComponent | rejects a non-image or too-big avatar before uploading | ✅ Pass |
+| 119 | `register.component.spec.ts` | RegisterComponent | is created with an empty form | ✅ Pass |
+| 120 | `register.component.spec.ts` | RegisterComponent | does not submit when the passwords do not match | ✅ Pass |
+| 121 | `register.component.spec.ts` | RegisterComponent | does not submit a date of birth in the future | ✅ Pass |
+| 122 | `register.component.spec.ts` | RegisterComponent | does not submit a weak password | ✅ Pass |
+| 123 | `register.component.spec.ts` | RegisterComponent | registers and goes to /groups | ✅ Pass |
+| 124 | `register.component.spec.ts` | RegisterComponent | shows the server errors in the page | ✅ Pass |
+| 125 | `room.component.spec.ts` | RoomComponent | joins the room from the route params and shows its name | ✅ Pass |
+| 126 | `room.component.spec.ts` | RoomComponent | renders the stored history (last 5) returned on join | ✅ Pass |
+| 127 | `room.component.spec.ts` | RoomComponent | adds messages pushed live by the server | ✅ Pass |
+| 128 | `room.component.spec.ts` | RoomComponent | ignores messages for a different room | ✅ Pass |
+| 129 | `room.component.spec.ts` | RoomComponent | shows a Delete button only on my own messages | ✅ Pass |
+| 130 | `room.component.spec.ts` | RoomComponent | removes a message when the server broadcasts its deletion | ✅ Pass |
+| 131 | `room.component.spec.ts` | RoomComponent | shows a popup when another user joins | ✅ Pass |
+| 132 | `room.component.spec.ts` | RoomComponent | sends the typed text through the ChatService and clears the box | ✅ Pass |
+| 133 | `room.component.spec.ts` | RoomComponent | disables Send while the message box is empty | ✅ Pass |
+| 134 | `room.component.spec.ts` | RoomComponent | redirects back to the group with the age banner when the server blocks entry | ✅ Pass |
+| 135 | `room.component.spec.ts` | RoomComponent | shows who is online in the room | ✅ Pass |
+| 136 | `room.component.spec.ts` | RoomComponent | shows the error from the server when a message is not sent | ✅ Pass |
+| 137 | `room.component.spec.ts` | RoomComponent | goes back to the group when the room is removed | ✅ Pass |
+| 138 | `room.component.spec.ts` | RoomComponent | shows who is typing and hides it when they stop | ✅ Pass |
+| 139 | `room.component.spec.ts` | RoomComponent | ignores typing from other rooms and from myself | ✅ Pass |
+| 140 | `room.component.spec.ts` | RoomComponent | stops showing someone as typing once their message arrives | ✅ Pass |
+| 141 | `room.component.spec.ts` | RoomComponent | sends typing once while I type, then stops after 2s idle | ✅ Pass |
+| 142 | `room.component.spec.ts` | RoomComponent | stops typing when the message is sent | ✅ Pass |
+| 143 | `room.component.spec.ts` | RoomComponent | leaves the room when the component is destroyed | ✅ Pass |
+| 144 | `navbar.component.spec.ts` | NavbarComponent | shows the admin links only to the Super Admin | ✅ Pass |
+| 145 | `navbar.component.spec.ts` | NavbarComponent | hides the admin links from normal users and skips the badge | ✅ Pass |
+| 146 | `navbar.component.spec.ts` | NavbarComponent | shows the pending request count for a Group Admin | ✅ Pass |
+| 147 | `navbar.component.spec.ts` | NavbarComponent | reloads the badge when the request queue changes | ✅ Pass |
+| 148 | `navbar.component.spec.ts` | NavbarComponent | logs out, closes the socket and goes to /login | ✅ Pass |
 
 ### 9.6 End-to-end tests (Playwright) — `npm run e2e` in `client/`
 
@@ -977,7 +991,7 @@ Run: `cd server && npm run unitTest`, `npm run integrationTest` (needs
 |---|------|-------|------|--------|
 | 1 | `fabulari.spec.ts` |  | login form: wrong password shows an error, right password opens the groups page | ✅ Pass |
 | 2 | `fabulari.spec.ts` |  | register form checks the password before sending it | ✅ Pass |
-| 3 | `fabulari.spec.ts` |  | three users chat live; the one who leaves stops getting messages | ✅ Pass |
+| 3 | `fabulari.spec.ts` |  | three users chat live (with "is typing…"); the one who leaves stops getting messages | ✅ Pass |
 | 4 | `fabulari.spec.ts` |  | a user who is too young is blocked from joining the group | ✅ Pass |
 | 5 | `fabulari.spec.ts` |  | group search finds groups by title | ✅ Pass |
 
@@ -997,6 +1011,8 @@ commits, so the history shows what was built together. Phase 2 branches:
 | `feature/search-and-validation` | Group search + pagination, admin log pages, room removal, ban reports, client form checks, error messages |
 | `test/phase2-automated-tests` | Mocha/Chai/Sinon server tests, Vitest Angular tests, Playwright E2E |
 | `docs/phase2` | This document, README update |
+| `docs/known-limitations` | Updated known limitations after the Phase 2 features |
+| `feature/typing-indicator` | "X is typing…" in rooms: `room:typing` socket event, `ChatService.sendTyping()` / `typing$`, Room page, tests |
 
 `server/data/db.json` (the Phase 1 store) is kept only as the input for
 `npm run import-json`; `node_modules/`, build output and the test database are

@@ -57,6 +57,7 @@ a single "final" dump.
 ## Phase 2
 
 Same model continued: `feature/mongodb-persistence`, `feature/socket-chat`,
-`feature/search-and-validation`, `test/phase2-automated-tests` and `docs/phase2`, each merged into `main` with
+`feature/search-and-validation`, `test/phase2-automated-tests`, `docs/phase2`, `docs/known-limitations`
+and `feature/typing-indicator`, each merged into `main` with
 a merge commit. `server/data/db.json` is now only the input for the one-off
 `npm run import-json` migration — live data lives in MongoDB.
