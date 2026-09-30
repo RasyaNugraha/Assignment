@@ -72,6 +72,21 @@ function isMessageOwnedBy(messageId, userId, secret) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// Allows max calls per key in windowMs (e.g. 5 messages / 3s per user).
+function createRateLimiter({ max, windowMs }) {
+  const hits = new Map();
+  return function allow(key, now = Date.now()) {
+    const recent = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (recent.length >= max) {
+      hits.set(key, recent);
+      return false;
+    }
+    recent.push(now);
+    hits.set(key, recent);
+    return true;
+  };
+}
+
 module.exports = {
   IMAGE_MAX_BYTES,
   MESSAGES_KEPT_PER_ROOM,
@@ -81,4 +96,5 @@ module.exports = {
   nextSequence,
   signMessageId,
   isMessageOwnedBy,
+  createRateLimiter,
 };

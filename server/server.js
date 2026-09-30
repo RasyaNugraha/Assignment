@@ -16,8 +16,8 @@ function createSessionStore() {
   return MongoStore.create({ client, dbName: db.getDb().databaseName, collectionName: 'sessions' });
 }
 
-// Puts Express and Socket.IO on one HTTP server (tests reuse this).
-function createServer() {
+// Puts Express and Socket.IO on one HTTP server (tests reuse this, and can override the rate limit).
+function createServer(options = {}) {
   // Same session for Express and Socket.IO, so sockets know who's logged in.
   const sessionMiddleware = createSessionMiddleware(createSessionStore());
   const app = createApp({ sessionMiddleware });
@@ -29,7 +29,10 @@ function createServer() {
     cors: { origin: config.clientOrigin, credentials: true },
   });
   io.engine.use(sessionMiddleware);
-  registerChatHandlers(io, { messageSecret: config.messageSecret });
+  registerChatHandlers(io, {
+    messageSecret: config.messageSecret,
+    messageRateLimit: options.messageRateLimit ?? config.messageRateLimit,
+  });
   app.set('io', io); // lets REST routes notify sockets (e.g. room removed)
 
   return { app, server, io };

@@ -46,7 +46,7 @@ that prototype into a fully working application:
 | Large data sets | Every group shown at once | **Search + filter + pagination** for the group list and the admin log (MongoDB `skip`/`limit`) |
 | Other real-time features | — | **Who's online** list in each room, **live notifications** ("your request was approved"), **live pending-request badge** and admin queues that refresh themselves |
 | UI polish | Static | Angular `animate.enter` animations (messages, cards, popups), skip link, visible focus, reduced-motion support |
-| Testing | None | **318 automated tests**: Mocha + assert + Sinon (server unit), Mocha + Chai + chai-http + socket.io-client against a test MongoDB (server integration), Vitest + TestBed (Angular, every component and service), **Playwright E2E** |
+| Testing | None | **322 automated tests**: Mocha + assert + Sinon (server unit), Mocha + Chai + chai-http + socket.io-client against a test MongoDB (server integration), Vitest + TestBed (Angular, every component and service), **Playwright E2E** |
 
 The data-access module (`services/dbService.js`) kept the **same function
 names** as Phase 1 (`getAll`, `findById`, `findOne`, `findMany`, `insert`,
@@ -89,7 +89,8 @@ Useful extras: `npm run reset-db` (server) drops the `fabulari` database, so
 the app shows the bootstrap (create Super Admin) screen again.
 
 Configuration can be overridden with environment variables (`server/config.js`):
-`PORT`, `MONGO_URI`, `DB_NAME`, `SESSION_SECRET`, `MESSAGE_SECRET`, `CLIENT_ORIGIN`.
+`PORT`, `MONGO_URI`, `DB_NAME`, `SESSION_SECRET`, `MESSAGE_SECRET`, `CLIENT_ORIGIN`,
+`MSG_RATE_MAX` / `MSG_RATE_WINDOW_MS` (anti-spam limit, default 5 messages per 3000 ms).
 
 ---
 
@@ -175,6 +176,7 @@ client may also check it for fast feedback, but the server is the authority).
 | R40 | *(Phase 2)* Real-time updates beyond chat. | ✅ | Socket events `room:members` (who's online), `notification` (request approved/denied → popup), `requests:changed` (badge + admin queues refresh). |
 | R41 | *(Phase 2)* Fault tolerant input. | ✅ Server + client | Every field type-checked on the server (a number/array/object where text is expected → `400`, never a crash); broken JSON → `400`; client checks the same rules first and shows the server's message when it still fails; approving twice at the same time only applies once. |
 | R42 | *(Phase 2)* Show when someone is typing in a room. | ✅ | Socket event `room:typing`; the Room page shows "Bob is typing…" / "Bob and Carol are typing…" above the message box. |
+| R43 | *(Phase 2)* Stop one user flooding a room. | ✅ Server | `message:send` is limited to 5 messages per user every 3 seconds (counted across all their tabs); extra messages are refused with a clear error that the Room page shows. |
 
 ---
 
@@ -430,7 +432,7 @@ receives `{ ok: true, ... }` or `{ ok: false, error }`.
 |-------|---------|---------------|------------------|
 | `room:join` | `{ groupId, roomId }` | `{ ok, room, messages: ChatMessage[] /* last ≤5, oldest first */ }` | `checkRoomAccess()`: not Super Admin, member, old enough (`minAge` returned when under age). Others in the room receive `room:user-joined`. |
 | `room:leave` | `{ roomId }` | `{ ok }` | Others receive `room:user-left`. |
-| `message:send` | `{ roomId, text?, imageUrl?, clientSentAt }` | `{ ok, message: ChatMessage }` | Must have joined; access re-checked; text and/or PNG/GIF/JPEG ≤2MB; stored, trimmed to last 5, broadcast as `message:new`. |
+| `message:send` | `{ roomId, text?, imageUrl?, clientSentAt }` | `{ ok, message: ChatMessage }` | Must have joined; access re-checked; text and/or PNG/GIF/JPEG ≤2MB; stored, trimmed to last 5, broadcast as `message:new`. Anti-spam: max 5 messages per user every 3s (all tabs together) → `{ ok: false, error: "You're sending messages too fast…" }`. |
 | `message:delete` | `{ roomId, messageId }` | `{ ok }` | Only the sender (signed id check); removed from MongoDB if still stored; `message:deleted` broadcast. |
 | `room:typing` | `{ roomId, typing: boolean }` | — (no ack) | Only from a socket that joined the room. Passed on to the others in the room; no database access. The client sends `true` on the first key press and `false` after 2s idle or on send. |
 
@@ -655,7 +657,7 @@ Navbar (any page): Groups · Profile · [Super Admin: Admin Queue · Admin Log] 
 Run: `cd server && npm run unitTest`, `npm run integrationTest` (needs
 `mongod`), `npm test` (both); `cd client && npm test`; `cd client && npm run e2e`.
 
-**Totals: 55 server unit + 110 server integration + 148 Angular + 5 E2E = 318 automated tests.**
+**Totals: 58 server unit + 111 server integration + 148 Angular + 5 E2E = 322 automated tests.**
 
 ### 9.3 Server unit tests — `npm run unitTest`
 
@@ -679,43 +681,46 @@ Run: `cd server && npm run unitTest`, `npm run integrationTest` (needs
 | 16 | `messageUtils.test.js` | messageUtils #signMessageId() / #isMessageOwnedBy() | rejects a tampered or malformed id | ✅ Pass |
 | 17 | `messageUtils.test.js` | messageUtils #nextSequence() | never returns the same number twice, even within one millisecond | ✅ Pass |
 | 18 | `messageUtils.test.js` | messageUtils #nextSequence() | follows the clock when time moves forward | ✅ Pass |
-| 19 | `paging.test.js` | paging helpers #parsePaging() | returns null when no page is asked for | ✅ Pass |
-| 20 | `paging.test.js` | paging helpers #parsePaging() | reads page and pageSize | ✅ Pass |
-| 21 | `paging.test.js` | paging helpers #parsePaging() | uses the default size and fixes bad numbers | ✅ Pass |
-| 22 | `paging.test.js` | paging helpers #parsePaging() | caps the page size | ✅ Pass |
-| 23 | `paging.test.js` | paging helpers #escapeRegex() | escapes regex characters | ✅ Pass |
-| 24 | `paging.test.js` | paging helpers #buildGroupFilter() | returns an empty filter by default | ✅ Pass |
-| 25 | `paging.test.js` | paging helpers #buildGroupFilter() | searches title and description, case-insensitive | ✅ Pass |
-| 26 | `paging.test.js` | paging helpers #buildGroupFilter() | filters by max age | ✅ Pass |
-| 27 | `paging.test.js` | paging helpers #buildGroupFilter() | filters to my groups | ✅ Pass |
-| 28 | `userUtils.test.js` | userUtils #computeAge() | returns the full age when the birthday has already passed this year | ✅ Pass |
-| 29 | `userUtils.test.js` | userUtils #computeAge() | subtracts one when the birthday has not happened yet this year | ✅ Pass |
-| 30 | `userUtils.test.js` | userUtils #computeAge() | counts the birthday itself as already had | ✅ Pass |
-| 31 | `userUtils.test.js` | userUtils #computeAge() | returns NaN for an invalid date | ✅ Pass |
-| 32 | `userUtils.test.js` | userUtils #toPublicUser() | removes the password hash and Mongo _id, and adds a computed age | ✅ Pass |
-| 33 | `userUtils.test.js` | userUtils #toPublicUser() | returns null for a missing user | ✅ Pass |
-| 34 | `userUtils.test.js` | userUtils #isValidPassword() | accepts 8+ characters with an uppercase letter | ✅ Pass |
-| 35 | `userUtils.test.js` | userUtils #isValidPassword() | rejects a password without an uppercase letter | ✅ Pass |
-| 36 | `userUtils.test.js` | userUtils #isValidPassword() | rejects a password shorter than 8 characters | ✅ Pass |
-| 37 | `userUtils.test.js` | userUtils #validateRegistrationFields() | returns no errors for valid fields | ✅ Pass |
-| 38 | `userUtils.test.js` | userUtils #validateRegistrationFields() | reports a bad email | ✅ Pass |
-| 39 | `userUtils.test.js` | userUtils #validateRegistrationFields() | reports a date of birth in the future | ✅ Pass |
-| 40 | `userUtils.test.js` | userUtils #validateRegistrationFields() | reports every missing field at once | ✅ Pass |
-| 41 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requireAuth middleware | responds 401 and does not call next() when there is no session | ✅ Pass |
-| 42 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requireAuth middleware | responds 401 when the session points at a user that no longer exists | ✅ Pass |
-| 43 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requireAuth middleware | attaches the user as req.currentUser and calls next() | ✅ Pass |
-| 44 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requests #canResolve() | lets only the Super Admin resolve group creation requests | ✅ Pass |
-| 45 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requests #canResolve() | lets only the Super Admin resolve account deletion requests (R4) | ✅ Pass |
-| 46 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requests #canResolve() | lets a Group Admin resolve join/room/ban requests for THEIR group only | ✅ Pass |
-| 47 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requests #canResolve() | returns false for an unknown request type | ✅ Pass |
-| 48 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) roomAccess #checkRoomAccess() | blocks the Super Admin from chat entirely | ✅ Pass |
-| 49 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) roomAccess #checkRoomAccess() | blocks users who are not members of the group | ✅ Pass |
-| 50 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) roomAccess #checkRoomAccess() | blocks members who are younger than the room's minimum age (R18) | ✅ Pass |
-| 51 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) roomAccess #checkRoomAccess() | allows an old-enough member in and returns the room | ✅ Pass |
-| 52 | `withSinon.test.js` | requests #describeRequest() | describes each request type for the popup | ✅ Pass |
-| 53 | `withSinon.test.js` | sockets/notify | broadcasts requests:changed through io | ✅ Pass |
-| 54 | `withSinon.test.js` | sockets/notify | sends a notification to the user's own channel | ✅ Pass |
-| 55 | `withSinon.test.js` | sockets/notify | does nothing when there is no io (REST-only tests) | ✅ Pass |
+| 19 | `messageUtils.test.js` | messageUtils #createRateLimiter() | allows up to max calls in the window, then blocks | ✅ Pass |
+| 20 | `messageUtils.test.js` | messageUtils #createRateLimiter() | allows again once old calls leave the window | ✅ Pass |
+| 21 | `messageUtils.test.js` | messageUtils #createRateLimiter() | counts each user separately | ✅ Pass |
+| 22 | `paging.test.js` | paging helpers #parsePaging() | returns null when no page is asked for | ✅ Pass |
+| 23 | `paging.test.js` | paging helpers #parsePaging() | reads page and pageSize | ✅ Pass |
+| 24 | `paging.test.js` | paging helpers #parsePaging() | uses the default size and fixes bad numbers | ✅ Pass |
+| 25 | `paging.test.js` | paging helpers #parsePaging() | caps the page size | ✅ Pass |
+| 26 | `paging.test.js` | paging helpers #escapeRegex() | escapes regex characters | ✅ Pass |
+| 27 | `paging.test.js` | paging helpers #buildGroupFilter() | returns an empty filter by default | ✅ Pass |
+| 28 | `paging.test.js` | paging helpers #buildGroupFilter() | searches title and description, case-insensitive | ✅ Pass |
+| 29 | `paging.test.js` | paging helpers #buildGroupFilter() | filters by max age | ✅ Pass |
+| 30 | `paging.test.js` | paging helpers #buildGroupFilter() | filters to my groups | ✅ Pass |
+| 31 | `userUtils.test.js` | userUtils #computeAge() | returns the full age when the birthday has already passed this year | ✅ Pass |
+| 32 | `userUtils.test.js` | userUtils #computeAge() | subtracts one when the birthday has not happened yet this year | ✅ Pass |
+| 33 | `userUtils.test.js` | userUtils #computeAge() | counts the birthday itself as already had | ✅ Pass |
+| 34 | `userUtils.test.js` | userUtils #computeAge() | returns NaN for an invalid date | ✅ Pass |
+| 35 | `userUtils.test.js` | userUtils #toPublicUser() | removes the password hash and Mongo _id, and adds a computed age | ✅ Pass |
+| 36 | `userUtils.test.js` | userUtils #toPublicUser() | returns null for a missing user | ✅ Pass |
+| 37 | `userUtils.test.js` | userUtils #isValidPassword() | accepts 8+ characters with an uppercase letter | ✅ Pass |
+| 38 | `userUtils.test.js` | userUtils #isValidPassword() | rejects a password without an uppercase letter | ✅ Pass |
+| 39 | `userUtils.test.js` | userUtils #isValidPassword() | rejects a password shorter than 8 characters | ✅ Pass |
+| 40 | `userUtils.test.js` | userUtils #validateRegistrationFields() | returns no errors for valid fields | ✅ Pass |
+| 41 | `userUtils.test.js` | userUtils #validateRegistrationFields() | reports a bad email | ✅ Pass |
+| 42 | `userUtils.test.js` | userUtils #validateRegistrationFields() | reports a date of birth in the future | ✅ Pass |
+| 43 | `userUtils.test.js` | userUtils #validateRegistrationFields() | reports every missing field at once | ✅ Pass |
+| 44 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requireAuth middleware | responds 401 and does not call next() when there is no session | ✅ Pass |
+| 45 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requireAuth middleware | responds 401 when the session points at a user that no longer exists | ✅ Pass |
+| 46 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requireAuth middleware | attaches the user as req.currentUser and calls next() | ✅ Pass |
+| 47 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requests #canResolve() | lets only the Super Admin resolve group creation requests | ✅ Pass |
+| 48 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requests #canResolve() | lets only the Super Admin resolve account deletion requests (R4) | ✅ Pass |
+| 49 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requests #canResolve() | lets a Group Admin resolve join/room/ban requests for THEIR group only | ✅ Pass |
+| 50 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) requests #canResolve() | returns false for an unknown request type | ✅ Pass |
+| 51 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) roomAccess #checkRoomAccess() | blocks the Super Admin from chat entirely | ✅ Pass |
+| 52 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) roomAccess #checkRoomAccess() | blocks users who are not members of the group | ✅ Pass |
+| 53 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) roomAccess #checkRoomAccess() | blocks members who are younger than the room's minimum age (R18) | ✅ Pass |
+| 54 | `withSinon.test.js` | Unit tests with Sinon stubs (no database) roomAccess #checkRoomAccess() | allows an old-enough member in and returns the room | ✅ Pass |
+| 55 | `withSinon.test.js` | requests #describeRequest() | describes each request type for the popup | ✅ Pass |
+| 56 | `withSinon.test.js` | sockets/notify | broadcasts requests:changed through io | ✅ Pass |
+| 57 | `withSinon.test.js` | sockets/notify | sends a notification to the user's own channel | ✅ Pass |
+| 58 | `withSinon.test.js` | sockets/notify | does nothing when there is no io (REST-only tests) | ✅ Pass |
 
 ### 9.4 Server integration tests — `npm run integrationTest`
 
@@ -755,82 +760,83 @@ Run: `cd server && npm run unitTest`, `npm run integrationTest` (needs
 | 32 | `chat.test.js` | Real-time chat (Socket.IO) message:delete | lets the sender delete their own message and tells everyone in the room | ✅ Pass |
 | 33 | `chat.test.js` | Real-time chat (Socket.IO) message:delete | refuses to delete someone else's message | ✅ Pass |
 | 34 | `chat.test.js` | Real-time chat (Socket.IO) message:delete | still lets the sender delete a message that is no longer stored on the server | ✅ Pass |
-| 35 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | returns one page plus the totals | ✅ Pass |
-| 36 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | returns the last, shorter page | ✅ Pass |
-| 37 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | still returns a plain array without ?page (old behaviour) | ✅ Pass |
-| 38 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | searches title and description (case-insensitive) | ✅ Pass |
-| 39 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | treats regex characters as plain text | ✅ Pass |
-| 40 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | filters by maximum age | ✅ Pass |
-| 41 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | lists only my groups with ?mine=true | ✅ Pass |
-| 42 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | pages the admin log | ✅ Pass |
-| 43 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | lists the action types | ✅ Pass |
-| 44 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | is Super Admin only | ✅ Pass |
-| 45 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | group title as a number | ✅ Pass |
-| 46 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | minAge as text | ✅ Pass |
-| 47 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | room name as an object | ✅ Pass |
-| 48 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | login with a number password | ✅ Pass |
-| 49 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | register with an array as the name | ✅ Pass |
-| 50 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | display name as a number | ✅ Pass |
-| 51 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | broken JSON body | ✅ Pass |
-| 52 | `extras.test.js` | Search, pagination and validation Double approve | two approve clicks at the same time only apply once | ✅ Pass |
-| 53 | `groups.test.js` | Group routes GET /api/groups | lists every group, even for visitors who are not logged in | ✅ Pass |
-| 54 | `groups.test.js` | Group routes GET /api/groups | adds viewer-specific flags (isMember / isAdmin) | ✅ Pass |
-| 55 | `groups.test.js` | Group routes GET /api/groups/:id | returns the rooms, and the member list only to a Group Admin | ✅ Pass |
-| 56 | `groups.test.js` | Group routes GET /api/groups/:id | returns 404 for an unknown group | ✅ Pass |
-| 57 | `groups.test.js` | Group routes POST /api/groups/requests | files a group creation request for the Super Admin | ✅ Pass |
-| 58 | `groups.test.js` | Group routes POST /api/groups/requests | rejects a title longer than 30 characters (R13) | ✅ Pass |
-| 59 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a user younger than the group minimum age immediately | ✅ Pass |
-| 60 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a second join request while one is pending | ✅ Pass |
-| 61 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a join request from an existing member | ✅ Pass |
-| 62 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | lets a member into an all-ages room | ✅ Pass |
-| 63 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | blocks the Super Admin (does not use chat) | ✅ Pass |
-| 64 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | blocks a non-member | ✅ Pass |
-| 65 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId/messages | returns the stored messages (none yet) to a member | ✅ Pass |
-| 66 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId/messages | is forbidden to the Super Admin (no access to chat history) | ✅ Pass |
-| 67 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | rejects a room request from a non-member | ✅ Pass |
-| 68 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | rejects a room name longer than 30 characters | ✅ Pass |
-| 69 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | files a room_creation request for a member | ✅ Pass |
-| 70 | `groups.test.js` | Group routes PATCH /api/groups/:id | lets a Group Admin change the description | ✅ Pass |
-| 71 | `groups.test.js` | Group routes PATCH /api/groups/:id | refuses to rename the group | ✅ Pass |
-| 72 | `groups.test.js` | Group routes PATCH /api/groups/:id | refuses edits from a non-admin member | ✅ Pass |
-| 73 | `groups.test.js` | Group routes GET /api/groups/:id/members | lists members for any member of the group | ✅ Pass |
-| 74 | `groups.test.js` | Group routes GET /api/groups/:id/members | is forbidden to non-members | ✅ Pass |
-| 75 | `groups.test.js` | Group routes POST /api/groups/:id/admins | only lets a Group Admin appoint | ✅ Pass |
-| 76 | `groups.test.js` | Group routes POST /api/groups/:id/admins | appoints a member as co-admin | ✅ Pass |
-| 77 | `groups.test.js` | Group routes POST /api/groups/:id/ban | only lets a Group Admin ban | ✅ Pass |
-| 78 | `groups.test.js` | Group routes POST /api/groups/:id/ban | refuses to ban another Group Admin | ✅ Pass |
-| 79 | `groups.test.js` | Group routes POST /api/groups/:id/ban | refuses to let an admin ban themselves | ✅ Pass |
-| 80 | `groups.test.js` | Group routes POST /api/groups/:id/leave | lets a co-admin leave now that there are two admins | ✅ Pass |
-| 81 | `groups.test.js` | Group routes POST /api/groups/:id/leave | stops the sole admin from leaving | ✅ Pass |
-| 82 | `groups.test.js` | Group routes POST /api/groups/:id/ban (successful ban) | removes the member from this group only and blocks rejoining | ✅ Pass |
-| 83 | `groups.test.js` | Group routes DELETE /api/groups/:groupId/rooms/:roomId | is forbidden to non-admins | ✅ Pass |
-| 84 | `groups.test.js` | Group routes DELETE /api/groups/:groupId/rooms/:roomId | lets the Group Admin remove a room and logs it | ✅ Pass |
-| 85 | `requests.test.js` | Request queue routes GET /api/requests | shows a Group Admin only the requests for their own group | ✅ Pass |
-| 86 | `requests.test.js` | Request queue routes GET /api/requests | shows a regular member nothing to approve | ✅ Pass |
-| 87 | `requests.test.js` | Request queue routes GET /api/requests | requires login | ✅ Pass |
-| 88 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | approving a group creation creates the group with the requester as admin | ✅ Pass |
-| 89 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | a Group Admin cannot approve a group creation request | ✅ Pass |
-| 90 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | cannot approve the same request twice | ✅ Pass |
-| 91 | `requests.test.js` | Request queue routes POST /api/requests/:id/deny | marks the request denied without changing anything else | ✅ Pass |
-| 92 | `requests.test.js` | Request queue routes POST /api/requests/:id/deny | returns 404 for an unknown request | ✅ Pass |
-| 93 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a member reports someone; the Group Admin approves and they are banned | ✅ Pass |
-| 94 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a banned user cannot request to rejoin (R8) | ✅ Pass |
-| 95 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a report needs a reason | ✅ Pass |
-| 96 | `requests.test.js` | Request queue routes Account deletion (R4 escalation) | Group Admin escalates, Super Admin approves, user is removed everywhere | ✅ Pass |
-| 97 | `requests.test.js` | Request queue routes Account deletion (R4 escalation) | requires a reason | ✅ Pass |
-| 98 | `users.test.js` | User & admin log routes PUT /api/users/me | changes the display name | ✅ Pass |
-| 99 | `users.test.js` | User & admin log routes PUT /api/users/me | rejects an empty display name | ✅ Pass |
-| 100 | `users.test.js` | User & admin log routes PUT /api/users/me/password | rejects a wrong current password | ✅ Pass |
-| 101 | `users.test.js` | User & admin log routes PUT /api/users/me/password | rejects a mismatched confirmation | ✅ Pass |
-| 102 | `users.test.js` | User & admin log routes PUT /api/users/me/password | changes the password so the new one works for login | ✅ Pass |
-| 103 | `users.test.js` | User & admin log routes PUT /api/users/me/preferences | saves valid preferences | ✅ Pass |
-| 104 | `users.test.js` | User & admin log routes PUT /api/users/me/preferences | ignores invalid values | ✅ Pass |
-| 105 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | rejects something that is not an image | ✅ Pass |
-| 106 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | stores the avatar and serves it back as an image | ✅ Pass |
-| 107 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | returns 404 for a user without an avatar | ✅ Pass |
-| 108 | `users.test.js` | User & admin log routes GET /api/admin/logs | is only available to the Super Admin | ✅ Pass |
-| 109 | `users.test.js` | User & admin log routes GET /api/admin/logs | returns logged admin actions, newest first | ✅ Pass |
-| 110 | `users.test.js` | User & admin log routes GET /api/admin/logs | filters by action type | ✅ Pass |
+| 35 | `chat.test.js` | Real-time chat (Socket.IO) message:send rate limit (anti-spam) | refuses messages over the limit, per user, even from a second tab | ✅ Pass |
+| 36 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | returns one page plus the totals | ✅ Pass |
+| 37 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | returns the last, shorter page | ✅ Pass |
+| 38 | `extras.test.js` | Search, pagination and validation GET /api/groups?page= | still returns a plain array without ?page (old behaviour) | ✅ Pass |
+| 39 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | searches title and description (case-insensitive) | ✅ Pass |
+| 40 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | treats regex characters as plain text | ✅ Pass |
+| 41 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | filters by maximum age | ✅ Pass |
+| 42 | `extras.test.js` | Search, pagination and validation GET /api/groups?search= / maxAge / mine | lists only my groups with ?mine=true | ✅ Pass |
+| 43 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | pages the admin log | ✅ Pass |
+| 44 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | lists the action types | ✅ Pass |
+| 45 | `extras.test.js` | Search, pagination and validation GET /api/admin/logs?page= and /api/admin/logs/actions | is Super Admin only | ✅ Pass |
+| 46 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | group title as a number | ✅ Pass |
+| 47 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | minAge as text | ✅ Pass |
+| 48 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | room name as an object | ✅ Pass |
+| 49 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | login with a number password | ✅ Pass |
+| 50 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | register with an array as the name | ✅ Pass |
+| 51 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | display name as a number | ✅ Pass |
+| 52 | `extras.test.js` | Search, pagination and validation Wrong data types get a 400, not a crash | broken JSON body | ✅ Pass |
+| 53 | `extras.test.js` | Search, pagination and validation Double approve | two approve clicks at the same time only apply once | ✅ Pass |
+| 54 | `groups.test.js` | Group routes GET /api/groups | lists every group, even for visitors who are not logged in | ✅ Pass |
+| 55 | `groups.test.js` | Group routes GET /api/groups | adds viewer-specific flags (isMember / isAdmin) | ✅ Pass |
+| 56 | `groups.test.js` | Group routes GET /api/groups/:id | returns the rooms, and the member list only to a Group Admin | ✅ Pass |
+| 57 | `groups.test.js` | Group routes GET /api/groups/:id | returns 404 for an unknown group | ✅ Pass |
+| 58 | `groups.test.js` | Group routes POST /api/groups/requests | files a group creation request for the Super Admin | ✅ Pass |
+| 59 | `groups.test.js` | Group routes POST /api/groups/requests | rejects a title longer than 30 characters (R13) | ✅ Pass |
+| 60 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a user younger than the group minimum age immediately | ✅ Pass |
+| 61 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a second join request while one is pending | ✅ Pass |
+| 62 | `groups.test.js` | Group routes POST /api/groups/:id/join | rejects a join request from an existing member | ✅ Pass |
+| 63 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | lets a member into an all-ages room | ✅ Pass |
+| 64 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | blocks the Super Admin (does not use chat) | ✅ Pass |
+| 65 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId (room entry check) | blocks a non-member | ✅ Pass |
+| 66 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId/messages | returns the stored messages (none yet) to a member | ✅ Pass |
+| 67 | `groups.test.js` | Group routes GET /api/groups/:groupId/rooms/:roomId/messages | is forbidden to the Super Admin (no access to chat history) | ✅ Pass |
+| 68 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | rejects a room request from a non-member | ✅ Pass |
+| 69 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | rejects a room name longer than 30 characters | ✅ Pass |
+| 70 | `groups.test.js` | Group routes POST /api/groups/:id/rooms/requests | files a room_creation request for a member | ✅ Pass |
+| 71 | `groups.test.js` | Group routes PATCH /api/groups/:id | lets a Group Admin change the description | ✅ Pass |
+| 72 | `groups.test.js` | Group routes PATCH /api/groups/:id | refuses to rename the group | ✅ Pass |
+| 73 | `groups.test.js` | Group routes PATCH /api/groups/:id | refuses edits from a non-admin member | ✅ Pass |
+| 74 | `groups.test.js` | Group routes GET /api/groups/:id/members | lists members for any member of the group | ✅ Pass |
+| 75 | `groups.test.js` | Group routes GET /api/groups/:id/members | is forbidden to non-members | ✅ Pass |
+| 76 | `groups.test.js` | Group routes POST /api/groups/:id/admins | only lets a Group Admin appoint | ✅ Pass |
+| 77 | `groups.test.js` | Group routes POST /api/groups/:id/admins | appoints a member as co-admin | ✅ Pass |
+| 78 | `groups.test.js` | Group routes POST /api/groups/:id/ban | only lets a Group Admin ban | ✅ Pass |
+| 79 | `groups.test.js` | Group routes POST /api/groups/:id/ban | refuses to ban another Group Admin | ✅ Pass |
+| 80 | `groups.test.js` | Group routes POST /api/groups/:id/ban | refuses to let an admin ban themselves | ✅ Pass |
+| 81 | `groups.test.js` | Group routes POST /api/groups/:id/leave | lets a co-admin leave now that there are two admins | ✅ Pass |
+| 82 | `groups.test.js` | Group routes POST /api/groups/:id/leave | stops the sole admin from leaving | ✅ Pass |
+| 83 | `groups.test.js` | Group routes POST /api/groups/:id/ban (successful ban) | removes the member from this group only and blocks rejoining | ✅ Pass |
+| 84 | `groups.test.js` | Group routes DELETE /api/groups/:groupId/rooms/:roomId | is forbidden to non-admins | ✅ Pass |
+| 85 | `groups.test.js` | Group routes DELETE /api/groups/:groupId/rooms/:roomId | lets the Group Admin remove a room and logs it | ✅ Pass |
+| 86 | `requests.test.js` | Request queue routes GET /api/requests | shows a Group Admin only the requests for their own group | ✅ Pass |
+| 87 | `requests.test.js` | Request queue routes GET /api/requests | shows a regular member nothing to approve | ✅ Pass |
+| 88 | `requests.test.js` | Request queue routes GET /api/requests | requires login | ✅ Pass |
+| 89 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | approving a group creation creates the group with the requester as admin | ✅ Pass |
+| 90 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | a Group Admin cannot approve a group creation request | ✅ Pass |
+| 91 | `requests.test.js` | Request queue routes POST /api/requests/:id/approve | cannot approve the same request twice | ✅ Pass |
+| 92 | `requests.test.js` | Request queue routes POST /api/requests/:id/deny | marks the request denied without changing anything else | ✅ Pass |
+| 93 | `requests.test.js` | Request queue routes POST /api/requests/:id/deny | returns 404 for an unknown request | ✅ Pass |
+| 94 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a member reports someone; the Group Admin approves and they are banned | ✅ Pass |
+| 95 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a banned user cannot request to rejoin (R8) | ✅ Pass |
+| 96 | `requests.test.js` | Request queue routes Ban requests (member reports another member) | a report needs a reason | ✅ Pass |
+| 97 | `requests.test.js` | Request queue routes Account deletion (R4 escalation) | Group Admin escalates, Super Admin approves, user is removed everywhere | ✅ Pass |
+| 98 | `requests.test.js` | Request queue routes Account deletion (R4 escalation) | requires a reason | ✅ Pass |
+| 99 | `users.test.js` | User & admin log routes PUT /api/users/me | changes the display name | ✅ Pass |
+| 100 | `users.test.js` | User & admin log routes PUT /api/users/me | rejects an empty display name | ✅ Pass |
+| 101 | `users.test.js` | User & admin log routes PUT /api/users/me/password | rejects a wrong current password | ✅ Pass |
+| 102 | `users.test.js` | User & admin log routes PUT /api/users/me/password | rejects a mismatched confirmation | ✅ Pass |
+| 103 | `users.test.js` | User & admin log routes PUT /api/users/me/password | changes the password so the new one works for login | ✅ Pass |
+| 104 | `users.test.js` | User & admin log routes PUT /api/users/me/preferences | saves valid preferences | ✅ Pass |
+| 105 | `users.test.js` | User & admin log routes PUT /api/users/me/preferences | ignores invalid values | ✅ Pass |
+| 106 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | rejects something that is not an image | ✅ Pass |
+| 107 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | stores the avatar and serves it back as an image | ✅ Pass |
+| 108 | `users.test.js` | User & admin log routes PUT /api/users/me/avatar + GET /api/users/:id/avatar | returns 404 for a user without an avatar | ✅ Pass |
+| 109 | `users.test.js` | User & admin log routes GET /api/admin/logs | is only available to the Super Admin | ✅ Pass |
+| 110 | `users.test.js` | User & admin log routes GET /api/admin/logs | returns logged admin actions, newest first | ✅ Pass |
+| 111 | `users.test.js` | User & admin log routes GET /api/admin/logs | filters by action type | ✅ Pass |
 
 ### 9.5 Angular unit tests (Vitest) — `npm test` in `client/`
 
@@ -1013,6 +1019,7 @@ commits, so the history shows what was built together. Phase 2 branches:
 | `docs/phase2` | This document, README update |
 | `docs/known-limitations` | Updated known limitations after the Phase 2 features |
 | `feature/typing-indicator` | "X is typing…" in rooms: `room:typing` socket event, `ChatService.sendTyping()` / `typing$`, Room page, tests |
+| `feature/rate-limit` | Anti-spam limit on `message:send` (`createRateLimiter()`), config options, unit + integration tests |
 
 `server/data/db.json` (the Phase 1 store) is kept only as the input for
 `npm run import-json`; `node_modules/`, build output and the test database are
@@ -1029,7 +1036,8 @@ not committed.
   or ranking; that's fine for the expected number of groups.
 - **Only the last 5 messages are kept per room** (by design, §3.4). Older
   messages are deleted, so there is no long chat history to scroll back through.
-- **One server only.** "Who's online" uses the Socket.IO rooms of this one
-  server. Running several servers would need the Socket.IO Redis/Mongo adapter.
+- **One server only.** "Who's online" and the anti-spam counter live in this
+  one server's memory. Running several servers would need the Socket.IO
+  Redis/Mongo adapter and a shared counter.
 - The Angular CLI marks the Vitest `unit-test` builder as *experimental* in
   Angular 20 (it becomes the default in Angular 21). It works as documented.
