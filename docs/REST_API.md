@@ -30,6 +30,7 @@ freshly computed `age` from `dateOfBirth`.
 | POST | `/groups/:id/join` | Auth required | — | New pending `group_join` request |
 | POST | `/groups/:id/rooms/requests` | Auth required, must be a member | `{ name, minAge }` | New pending `room_creation` request |
 | POST | `/groups/:id/admins` | Group Admin only | `{ userId }` | Updated group; appoints `userId` as co-admin |
+| DELETE | `/groups/:id/admins/:userId` | Group Admin only | — | Updated group; removes `userId` as admin (or yourself = step down). Never the creator (unless it's you) or the last admin |
 | POST | `/groups/:id/leave` | Auth required, must be a member | — | Updated group; blocked if requester is the sole admin |
 | PATCH | `/groups/:id` | Group Admin only | `{ description?, minAge? }` | Updated group (title can't be changed) |
 
