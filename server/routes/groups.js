@@ -365,6 +365,50 @@ router.post('/groups/:id/admins', requireAuth, async (req, res) => {
   res.json(await groupDetailFor(updatedGroup, req.currentUser));
 });
 
+// DELETE /api/groups/:id/admins/:userId - take away admin status (or step down yourself).
+router.delete('/groups/:id/admins/:userId', requireAuth, async (req, res) => {
+  const group = await db.findById('groups', req.params.id);
+  if (!group) return res.status(404).json({ error: 'Group not found.' });
+  if (!group.adminIds.includes(req.currentUser.id)) {
+    return res.status(403).json({ error: 'Only a Group Admin of this group can remove an admin.' });
+  }
+
+  const { userId } = req.params;
+  const target = await db.findById('users', userId);
+  if (!target || !group.adminIds.includes(userId)) {
+    return res.status(400).json({ error: 'That member is not a Group Admin.' });
+  }
+  // The creator is the first admin; only they can step themselves down.
+  if (userId === group.adminIds[0] && userId !== req.currentUser.id) {
+    return res.status(403).json({ error: 'The group creator can only be removed as admin by themselves.' });
+  }
+  if (group.adminIds.length === 1) {
+    return res.status(409).json({ error: 'A group must always have at least one admin. Appoint another admin first.' });
+  }
+
+  // Only pull if still an admin and not the last one (safe if two requests race).
+  const updated = await db.updateWhereWith(
+    'groups',
+    { id: group.id, adminIds: userId, 'adminIds.1': { $exists: true } },
+    { $pull: { adminIds: userId } },
+  );
+  if (!updated) {
+    return res.status(409).json({ error: 'A group must always have at least one admin. Appoint another admin first.' });
+  }
+  await db.updateWith('users', userId, { $pull: { groupAdminOf: group.id } });
+  const self = userId === req.currentUser.id;
+  await db.logAdminAction({
+    action: 'group_admin_removed',
+    actorId: req.currentUser.id,
+    targetId: userId,
+    details: self
+      ? `${target.displayName} stepped down as a Group Admin of "${group.title}".`
+      : `${req.currentUser.displayName} removed ${target.displayName} as a Group Admin of "${group.title}".`,
+  });
+
+  res.json(await groupDetailFor(updated, req.currentUser));
+});
+
 // Remove a member from this group and add them to bannedIds.
 async function banFromGroup(group, target) {
   const updatedGroup = await db.updateWith('groups', group.id, {

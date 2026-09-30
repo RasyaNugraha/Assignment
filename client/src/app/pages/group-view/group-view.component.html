@@ -144,6 +144,9 @@
           </ul>
 
           <h3 class="admin-panel__subtitle">Members</h3>
+          @if (canStepDown()) {
+            <button class="btn btn--outline btn--sm" type="button" (click)="onStepDown()">Step down as admin</button>
+          }
           @if (removalRequestSent()) {
             <p class="sidebar__note">Removal request sent to the Super Admin.</p>
           }
@@ -153,6 +156,11 @@
                 <span>{{ member.displayName }}</span>
                 @if (member.isAdmin) {
                   <span class="badge">Admin</span>
+                  @if (canRemoveAdmin(member)) {
+                    <span class="request-list__actions">
+                      <button class="btn btn--outline btn--sm" type="button" (click)="onRemoveAdmin(member)">Remove Admin</button>
+                    </span>
+                  }
                 } @else if (member.id !== auth.currentUser()?.id) {
                   <span class="request-list__actions">
                     <button class="btn btn--outline btn--sm" type="button" (click)="onAppointAdmin(member)">Make Admin</button>

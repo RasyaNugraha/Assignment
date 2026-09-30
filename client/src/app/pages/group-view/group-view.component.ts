@@ -72,6 +72,10 @@ export class GroupViewComponent implements OnInit, OnDestroy {
 
   // Members (only sent to admins).
   members = computed(() => this.group().members ?? []);
+  // First admin = the one who created the group.
+  creatorId = computed(() => this.group().adminIds[0] ?? '');
+  // I can step down if I'm an admin and I'm not the only one.
+  canStepDown = computed(() => this.isGroupAdmin() && this.group().adminIds.length > 1);
 
   // Request removal form.
   removalTargetId = signal<string | null>(null);
@@ -196,6 +200,34 @@ export class GroupViewComponent implements OnInit, OnDestroy {
       await this.loadGroup(this.groupId());
     } catch (err: any) {
       this.errorMessage.set(err?.error?.error ?? 'Could not appoint that member as admin. Try again.');
+    }
+  }
+
+  // True if I can take away this member's admin status.
+  canRemoveAdmin(member: MemberSummary): boolean {
+    return member.isAdmin && member.id !== this.auth.currentUser()?.id && member.id !== this.creatorId();
+  }
+
+  // Make an admin a normal member again.
+  async onRemoveAdmin(member: MemberSummary): Promise<void> {
+    try {
+      await this.groupService.removeAdmin(this.groupId(), member.id);
+      await this.loadGroup(this.groupId());
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not remove that admin. Try again.');
+    }
+  }
+
+  // Stop being an admin of this group (stay a member).
+  async onStepDown(): Promise<void> {
+    const me = this.auth.currentUser()?.id;
+    if (!me) return;
+    try {
+      await this.groupService.removeAdmin(this.groupId(), me);
+      await this.auth.me().catch(() => undefined);
+      await this.loadGroup(this.groupId());
+    } catch (err: any) {
+      this.errorMessage.set(err?.error?.error ?? 'Could not step down. Try again.');
     }
   }
 

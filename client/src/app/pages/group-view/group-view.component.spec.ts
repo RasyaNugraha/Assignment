@@ -53,6 +53,7 @@ describe('GroupViewComponent', () => {
       removeRoom: vi.fn().mockResolvedValue(undefined),
       getMembers: vi.fn().mockResolvedValue([{ id: 'me', displayName: 'Me', isAdmin: false }, { id: 'b', displayName: 'Bob', isAdmin: false }]),
       requestBan: vi.fn().mockResolvedValue({}),
+      removeAdmin: vi.fn().mockResolvedValue({}),
     };
     requests = {
       getPending: vi.fn().mockResolvedValue([
@@ -126,5 +127,39 @@ describe('GroupViewComponent', () => {
     requests['getPending'].mockClear();
     chat.requestsChanged$.next();
     expect(requests['getPending']).toHaveBeenCalled();
+  });
+
+  it('shows Remove Admin for co-admins, but not for me or the group creator', async () => {
+    const members = [
+      { id: 'creator', displayName: 'Cat', isAdmin: true },
+      { id: 'me', displayName: 'Me', isAdmin: true },
+      { id: 'b', displayName: 'Bob', isAdmin: true },
+    ];
+    await render(makeGroupDetail({ isMember: true, isAdmin: true, rooms, members, adminIds: ['creator', 'me', 'b'] }));
+    const buttons = Array.from(el.querySelectorAll('button')).filter((b) => b.textContent?.includes('Remove Admin'));
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].closest('li')?.textContent).toContain('Bob');
+    await component.onRemoveAdmin(members[2]);
+    expect(groups['removeAdmin']).toHaveBeenCalledWith('g1', 'b');
+  });
+
+  it('lets me step down only when there is another admin', async () => {
+    await render(makeGroupDetail({ isMember: true, isAdmin: true, rooms, members: [], adminIds: ['me'] }));
+    expect(component.canStepDown()).toBe(false);
+    expect(el.textContent).not.toContain('Step down as admin');
+
+    component.group.set(makeGroupDetail({ isMember: true, isAdmin: true, rooms, members: [], adminIds: ['me', 'b'] }));
+    fixture.detectChanges();
+    expect(el.textContent).toContain('Step down as admin');
+    vi.spyOn(TestBed.inject(AuthService), 'me').mockResolvedValue(makeUser());
+    await component.onStepDown();
+    expect(groups['removeAdmin']).toHaveBeenCalledWith('g1', 'me');
+  });
+
+  it("shows the server's message when removing an admin fails", async () => {
+    groups['removeAdmin'].mockRejectedValue({ error: { error: 'A group must always have at least one admin. Appoint another admin first.' } });
+    await render(makeGroupDetail({ isMember: true, isAdmin: true, rooms, members: [], adminIds: ['me', 'b'] }));
+    await component.onRemoveAdmin({ id: 'b', displayName: 'Bob', isAdmin: true });
+    expect(component.errorMessage()).toContain('at least one admin');
   });
 });

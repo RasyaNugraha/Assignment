@@ -106,4 +106,10 @@ describe('GroupService search + extras', () => {
     ban.flush({});
     await Promise.all([p1, p2]);
   });
+
+  it('removeAdmin() sends DELETE to the admin url', async () => {
+    const p = service.removeAdmin('g1', 'u2');
+    http.expectOne({ method: 'DELETE', url: '/api/groups/g1/admins/u2' }).flush({});
+    await p;
+  });
 });
