@@ -130,6 +130,11 @@ async function updateWhere(collection, filter, updates) {
   return col(collection).findOneAndUpdate(filter, { $set: updates }, { returnDocument: 'after', ...PROJECTION });
 }
 
+// Like updateWhere, but with any Mongo operator (null if nothing matched).
+async function updateWhereWith(collection, filter, mongoUpdate) {
+  return col(collection).findOneAndUpdate(filter, mongoUpdate, { returnDocument: 'after', ...PROJECTION });
+}
+
 // Update many docs.
 async function updateManyWith(collection, filter, mongoUpdate) {
   const result = await col(collection).updateMany(filter, mongoUpdate);
@@ -179,6 +184,7 @@ module.exports = {
   update,
   updateWith,
   updateWhere,
+  updateWhereWith,
   updateManyWith,
   remove,
   removeMany,

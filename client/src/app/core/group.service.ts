@@ -88,6 +88,11 @@ export class GroupService {
     return this.toPromise(this.http.post<GroupDetail>(`/api/groups/${groupId}/admins`, { userId }));
   }
 
+  // Take away someone's admin status (or my own).
+  removeAdmin(groupId: string, userId: string): Promise<GroupDetail> {
+    return this.toPromise(this.http.delete<GroupDetail>(`/api/groups/${groupId}/admins/${userId}`));
+  }
+
   // Ban a member from this group.
   banMember(groupId: string, userId: string): Promise<GroupDetail> {
     return this.toPromise(this.http.post<GroupDetail>(`/api/groups/${groupId}/ban`, { userId }));
