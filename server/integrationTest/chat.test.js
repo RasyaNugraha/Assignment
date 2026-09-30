@@ -40,7 +40,8 @@ describe('Real-time chat (Socket.IO)', function () {
 
   before(async () => {
     await clearDb();
-    ({ server } = createServer());
+    // High limit here: some tests send bursts on purpose. The limit has its own test below.
+    ({ server } = createServer({ messageRateLimit: { max: 1000, windowMs: 1000 } }));
     await new Promise((resolve) => server.listen(0, resolve));
     baseUrl = `http://localhost:${server.address().port}`;
 
@@ -302,6 +303,61 @@ describe('Real-time chat (Socket.IO)', function () {
       const res = await emit(alice, 'message:delete', { roomId: room.id, messageId: old.message.id });
       expect(res.ok).to.equal(true);
       expect((await deleted).messageId).to.equal(old.message.id);
+    });
+  });
+
+  describe('message:send rate limit (anti-spam)', () => {
+    let limited;
+    let limitedIo;
+    let limitedUrl;
+    const limitedSockets = [];
+    const limitedCookies = {};
+
+    before(async () => {
+      ({ server: limited, io: limitedIo } = createServer({ messageRateLimit: { max: 3, windowMs: 60000 } }));
+      await new Promise((resolve) => limited.listen(0, resolve));
+      limitedUrl = `http://localhost:${limited.address().port}`;
+      // Each server has its own session store in tests, so log in again here.
+      for (const name of ['alice', 'bob']) {
+        const agent = chai.request.agent(limitedUrl);
+        const { email, password } = userFields(name);
+        await agent.post('/api/auth/login').send({ email, password });
+        limitedCookies[name] = await cookieFor(agent);
+        agent.close();
+      }
+    });
+    after(async () => {
+      limitedSockets.forEach((s) => s.disconnect());
+      limitedIo.close();
+      await new Promise((resolve) => limited.close(resolve));
+    });
+
+    // Socket on the server with the small limit.
+    function connectLimited(cookie) {
+      const socket = ioClient(limitedUrl, { extraHeaders: { cookie }, transports: ['websocket'], forceNew: true });
+      limitedSockets.push(socket);
+      return new Promise((resolve, reject) => {
+        socket.once('connect', () => resolve(socket));
+        socket.once('connect_error', reject);
+      });
+    }
+
+    it('refuses messages over the limit, per user, even from a second tab', async () => {
+      const tab1 = await connectLimited(limitedCookies.alice);
+      const tab2 = await connectLimited(limitedCookies.alice);
+      const bob = await connectLimited(limitedCookies.bob);
+      for (const s of [tab1, tab2, bob]) await emit(s, 'room:join', { groupId: group.id, roomId: room.id });
+
+      for (let i = 0; i < 3; i += 1) {
+        expect((await emit(tab1, 'message:send', { roomId: room.id, text: `spam ${i}` })).ok).to.equal(true);
+      }
+      const blocked = await emit(tab2, 'message:send', { roomId: room.id, text: 'one too many' });
+      expect(blocked.ok).to.equal(false);
+      expect(blocked.error).to.match(/too fast/);
+      expect(await db.findOne('messages', { text: 'one too many' })).to.equal(null);
+
+      // Bob has his own limit.
+      expect((await emit(bob, 'message:send', { roomId: room.id, text: 'bob is fine' })).ok).to.equal(true);
     });
   });
 });

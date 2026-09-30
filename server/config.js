@@ -6,5 +6,10 @@ module.exports = {
   // Dev-only secrets.
   sessionSecret: process.env.SESSION_SECRET || 'fabulari-dev-secret',
   messageSecret: process.env.MESSAGE_SECRET || 'fabulari-dev-message-secret',
+  // Anti-spam: max messages per user in a time window.
+  messageRateLimit: {
+    max: Number(process.env.MSG_RATE_MAX || 5),
+    windowMs: Number(process.env.MSG_RATE_WINDOW_MS || 3000),
+  },
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:4200',
 };

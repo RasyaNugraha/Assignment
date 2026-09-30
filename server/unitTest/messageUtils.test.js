@@ -6,6 +6,7 @@ const {
   resolveSentAt,
   signMessageId,
   isMessageOwnedBy,
+  createRateLimiter,
 } = require('../services/messageUtils');
 
 // Builds a base64 data URL whose decoded size is exactly `bytes`.
@@ -83,5 +84,25 @@ describe('messageUtils #nextSequence()', () => {
   });
   it('follows the clock when time moves forward', () => {
     assert.equal(nextSequence(9e15), 9e15);
+  });
+
+  describe('#createRateLimiter()', () => {
+    it('allows up to max calls in the window, then blocks', () => {
+      const allow = createRateLimiter({ max: 3, windowMs: 1000 });
+      assert.deepStrictEqual([0, 10, 20, 30].map((t) => allow('u1', t)), [true, true, true, false]);
+    });
+    it('allows again once old calls leave the window', () => {
+      const allow = createRateLimiter({ max: 2, windowMs: 1000 });
+      allow('u1', 0);
+      allow('u1', 100);
+      assert.equal(allow('u1', 500), false);
+      assert.equal(allow('u1', 1000), true);
+    });
+    it('counts each user separately', () => {
+      const allow = createRateLimiter({ max: 1, windowMs: 1000 });
+      assert.equal(allow('u1', 0), true);
+      assert.equal(allow('u2', 0), true);
+      assert.equal(allow('u1', 1), false);
+    });
   });
 });

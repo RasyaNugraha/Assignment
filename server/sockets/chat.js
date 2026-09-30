@@ -9,6 +9,7 @@ const {
   nextSequence,
   signMessageId,
   isMessageOwnedBy,
+  createRateLimiter,
 } = require('../services/messageUtils');
 
 const channel = (roomId) => `room:${roomId}`;
@@ -49,7 +50,10 @@ async function broadcastMembers(io, roomId) {
 }
 
 // Set up all socket events.
-function registerChatHandlers(io, { messageSecret }) {
+function registerChatHandlers(io, { messageSecret, messageRateLimit = { max: 5, windowMs: 3000 } }) {
+  // Shared by all sockets, so opening more tabs doesn't get around it.
+  const allowMessage = createRateLimiter(messageRateLimit);
+
   // Only logged-in users can connect.
   io.use((socket, next) => {
     if (socket.request.session?.userId) return next();
@@ -121,6 +125,9 @@ function registerChatHandlers(io, { messageSecret }) {
     // Send a message.
     handle('message:send', async (user, { roomId, text, imageUrl, clientSentAt }) => {
       if (!joinedRooms.has(roomId)) return { ok: false, error: 'Join the room before sending messages.' };
+      if (!allowMessage(user.id)) {
+        return { ok: false, error: "You're sending messages too fast. Wait a few seconds and try again." };
+      }
 
       // Check again in case they got banned or the room was removed.
       const access = await checkRoomAccess(user, joinedRooms.get(roomId), roomId);
